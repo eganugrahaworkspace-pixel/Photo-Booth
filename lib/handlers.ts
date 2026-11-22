@@ -5,7 +5,8 @@ import { MAX_BYTES, isPhotoId, isJpeg, isExpired } from "./photo.js";
 // tests use an in-memory fake. Keeping this file free of @vercel/blob lets it run under node:test.
 export interface Store {
   put(path: string, b: Uint8Array): Promise<void>;
-  head(path: string): Promise<{ uploadedAt: Date; url: string } | null>;
+  head(path: string): Promise<{ uploadedAt: Date } | null>;
+  read(path: string): Promise<ReadableStream<Uint8Array> | null>;
   list(): Promise<{ path: string; uploadedAt: Date }[]>;
   del(paths: string[]): Promise<void>;
 }
@@ -35,11 +36,24 @@ export async function handlePut(
   return 201;
 }
 
+// Returns the storage path of a live photo, or null. Never reads the bytes.
 export async function resolvePhoto(id: string, store: Store, now: Date): Promise<string | null> {
   if (!isPhotoId(id)) return null;
-  const found = await store.head(photoPath(id));
+  const path = photoPath(id);
+  const found = await store.head(path);
   if (!found || isExpired(found.uploadedAt, now)) return null;
-  return found.url;
+  return path;
+}
+
+// Streams a live photo. An expired or missing photo is never read from storage.
+export async function openPhoto(
+  id: string,
+  store: Store,
+  now: Date,
+): Promise<ReadableStream<Uint8Array> | null> {
+  const path = await resolvePhoto(id, store, now);
+  if (!path) return null;
+  return store.read(path);
 }
 
 export async function cleanup(store: Store, now: Date): Promise<number> {

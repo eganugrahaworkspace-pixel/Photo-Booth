@@ -1,12 +1,13 @@
-import { put, head, list, del, BlobNotFoundError } from "@vercel/blob";
+import { put, head, get, list, del, BlobNotFoundError } from "@vercel/blob";
 import type { Store } from "./handlers.js";
 
-// Public access: the blob URL is unguessable, and the GET route proxies it so
-// the guest page stays same-origin. addRandomSuffix off + allowOverwrite make retries overwrite one file.
+// Private store (must be created with Private access). Bytes are only reachable
+// through the SDK with the server token, so GET /api/photo is the sole read path.
+// addRandomSuffix off + allowOverwrite make retries overwrite one file.
 export const blobStore: Store = {
   async put(path, b) {
     await put(path, Buffer.from(b.buffer, b.byteOffset, b.byteLength), {
-      access: "public",
+      access: "private",
       contentType: "image/jpeg",
       addRandomSuffix: false,
       allowOverwrite: true,
@@ -16,7 +17,18 @@ export const blobStore: Store = {
   async head(path) {
     try {
       const meta = await head(path);
-      return { uploadedAt: meta.uploadedAt, url: meta.url };
+      return { uploadedAt: meta.uploadedAt };
+    } catch (err) {
+      if (err instanceof BlobNotFoundError) return null;
+      throw err;
+    }
+  },
+
+  async read(path) {
+    try {
+      const result = await get(path, { access: "private" });
+      if (!result || result.statusCode !== 200) return null;
+      return result.stream;
     } catch (err) {
       if (err instanceof BlobNotFoundError) return null;
       throw err;

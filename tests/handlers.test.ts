@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handlePut, resolvePhoto, cleanup, isCronAuthorized, type Store } from "../lib/handlers.ts";
+import { handlePut, resolvePhoto, openPhoto, cleanup, isCronAuthorized, type Store } from "../lib/handlers.ts";
 import { MAX_BYTES, RETENTION_MS } from "../lib/photo.ts";
 
 const ID = "AAAAAAAAAAAAAAAAAAAAAA";
@@ -15,12 +15,20 @@ const DAY = 24 * 60 * 60 * 1000;
 type Entry = { bytes: Uint8Array; uploadedAt: Date };
 
 // In-memory Store. Fresh per test. `put` stamps uploads with `clock`.
+// `reads` records every path passed to read(), so tests can assert storage was never touched.
 function fakeStore(clock: Date = NOW) {
   const files = new Map<string, Entry>();
   const dels: string[][] = [];
-  const store: Store & { files: Map<string, Entry>; dels: string[][]; seed(id: string, uploadedAt: Date): void } = {
+  const reads: string[] = [];
+  const store: Store & {
+    files: Map<string, Entry>;
+    dels: string[][];
+    reads: string[];
+    seed(id: string, uploadedAt: Date): void;
+  } = {
     files,
     dels,
+    reads,
     seed(id, uploadedAt) {
       files.set(`photos/${id}.jpg`, { bytes: JPEG, uploadedAt });
     },
@@ -29,7 +37,18 @@ function fakeStore(clock: Date = NOW) {
     },
     async head(path) {
       const f = files.get(path);
-      return f ? { uploadedAt: f.uploadedAt, url: `https://blob.test/${path}` } : null;
+      return f ? { uploadedAt: f.uploadedAt } : null;
+    },
+    async read(path) {
+      reads.push(path);
+      const f = files.get(path);
+      if (!f) return null;
+      return new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(f.bytes);
+          c.close();
+        },
+      });
     },
     async list() {
       return [...files].map(([path, f]) => ({ path, uploadedAt: f.uploadedAt }));
@@ -76,10 +95,31 @@ test("retry id sama hanya satu file", async () => {
   assert.equal(await handlePut({ id: ID, key: "k", body: JPEG }, store, "k"), 201);
   assert.equal((await store.list()).length, 1);
 });
-test("resolvePhoto mengembalikan url untuk foto segar", async () => {
+test("resolvePhoto mengembalikan path untuk foto segar", async () => {
   const store = fakeStore();
   await handlePut({ id: ID, key: "k", body: JPEG }, store, "k");
-  assert.equal(await resolvePhoto(ID, store, NOW), `https://blob.test/photos/${ID}.jpg`);
+  assert.equal(await resolvePhoto(ID, store, NOW), `photos/${ID}.jpg`);
+  assert.equal(store.reads.length, 0);
+});
+test("openPhoto mengalirkan isi foto segar", async () => {
+  const store = fakeStore();
+  await handlePut({ id: ID, key: "k", body: JPEG }, store, "k");
+  const stream = await openPhoto(ID, store, NOW);
+  assert.ok(stream);
+  assert.deepEqual(new Uint8Array(await new Response(stream).arrayBuffer()), JPEG);
+  assert.deepEqual(store.reads, [`photos/${ID}.jpg`]);
+});
+test("openPhoto untuk id ngawur atau tidak ada tidak membaca storage", async () => {
+  const store = fakeStore();
+  assert.equal(await openPhoto("../a", store, NOW), null);
+  assert.equal(await openPhoto(ID, store, NOW), null);
+  assert.equal(store.reads.length, 0);
+});
+test("foto kedaluwarsa tidak pernah dibaca dari storage", async () => {
+  const store = fakeStore();
+  store.seed(OLD_ID, new Date(NOW.getTime() - RETENTION_MS - 1));
+  assert.equal(await openPhoto(OLD_ID, store, NOW), null);
+  assert.equal(store.reads.length, 0);
 });
 test("resolvePhoto null untuk id ngawur atau tidak ada", async () => {
   const store = fakeStore();

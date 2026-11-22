@@ -1,5 +1,5 @@
 import { MAX_BYTES } from "../lib/photo.js";
-import { handlePut, resolvePhoto } from "../lib/handlers.js";
+import { handlePut, openPhoto } from "../lib/handlers.js";
 import { blobStore } from "../lib/blob-store.js";
 
 // Reads at most MAX_BYTES + 1 bytes. A longer body is cut short, which still fails the size check in handlePut.
@@ -46,20 +46,14 @@ export async function PUT(request: Request): Promise<Response> {
 
 export async function GET(request: Request): Promise<Response> {
   const id = new URL(request.url).searchParams.get("id") ?? "";
-  const url = await resolvePhoto(id, blobStore, new Date());
-  if (!url) return new Response(null, { status: 404 });
-
-  let upstream: Response;
+  let stream: ReadableStream<Uint8Array> | null;
   try {
-    upstream = await fetch(url);
+    stream = await openPhoto(id, blobStore, new Date());
   } catch {
     return new Response(null, { status: 502 });
   }
-  if (!upstream.ok || !upstream.body) {
-    await upstream.body?.cancel();
-    return new Response(null, { status: 502 });
-  }
-  return new Response(upstream.body, {
+  if (!stream) return new Response(null, { status: 404 });
+  return new Response(stream, {
     headers: {
       "content-type": "image/jpeg",
       "cache-control": "private, no-store",
