@@ -4,10 +4,25 @@ let activeVideo: HTMLVideoElement | null = null;
 let activeDeviceId: string | undefined;
 let wakeLock: WakeLockSentinel | null = null;
 let watching = false;
+// While a shot is in progress the stream must not be replaced, or the video would clear mid-countdown.
+let hold = false;
+let pendingRestart = false;
+let onState: ((usable: boolean) => void) | null = null;
+
+export function onCameraState(cb: (usable: boolean) => void): void {
+  onState = cb;
+}
 
 export function currentDeviceId(video: HTMLVideoElement): string | undefined {
   const stream = video.srcObject;
   return stream instanceof MediaStream ? stream.getVideoTracks()[0]?.getSettings().deviceId : undefined;
+}
+
+// A frame can be stale or black when the track has ended or is muted by the OS, so both must pass.
+export function isCameraUsable(video: HTMLVideoElement): boolean {
+  const stream = video.srcObject;
+  const track = stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
+  return !!track && track.readyState === "live" && !track.muted;
 }
 
 // Opens the camera. The previous stream is only stopped once the new one is
@@ -24,6 +39,7 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
+  watchTrack(video, stream.getVideoTracks()[0]);
   await video.play();
 
   activeVideo = video;
@@ -33,12 +49,44 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
     document.addEventListener("visibilitychange", onVisibilityChange);
     watching = true;
   }
+  emit(video);
 }
 
 // Only meaningful after camera permission is granted: labels and ids are blank before that.
 export async function listCameras(): Promise<MediaDeviceInfo[]> {
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices.filter((d) => d.kind === "videoinput");
+}
+
+// Called by the booth whenever it is not idle, so an in-flight shot keeps its stream.
+export function setCameraHold(held: boolean): void {
+  hold = held;
+  if (!held && pendingRestart) {
+    pendingRestart = false;
+    void restartCamera();
+  }
+}
+
+export async function restartCamera(): Promise<void> {
+  const video = activeVideo;
+  if (!video) return;
+  try {
+    await startCamera(video, activeDeviceId);
+  } catch {
+    onState?.(false);
+  }
+}
+
+function watchTrack(video: HTMLVideoElement, track: MediaStreamTrack | undefined): void {
+  if (!track) return;
+  const notify = () => emit(video);
+  track.addEventListener("ended", notify);
+  track.addEventListener("mute", notify);
+  track.addEventListener("unmute", notify);
+}
+
+function emit(video: HTMLVideoElement): void {
+  onState?.(isCameraUsable(video));
 }
 
 function stopStream(video: HTMLVideoElement): void {
@@ -56,16 +104,13 @@ async function requestWakeLock(): Promise<void> {
   }
 }
 
-// Browsers stop the stream and the wake lock while the page is hidden.
-async function onVisibilityChange(): Promise<void> {
-  const video = activeVideo;
-  if (document.visibilityState !== "visible" || !video) return;
-  const stream = video.srcObject;
-  const live = stream instanceof MediaStream && stream.getVideoTracks().some((t) => t.readyState === "live");
-  if (live) {
-    await video.play().catch(() => {});
-    await requestWakeLock();
-  } else {
-    await startCamera(video, activeDeviceId).catch(() => {});
+// Browsers stop the stream and the wake lock while the page is hidden, and
+// iOS can leave a track "live" but frozen, so the stream is restarted on every return.
+function onVisibilityChange(): void {
+  if (document.visibilityState !== "visible" || !activeVideo) return;
+  if (hold) {
+    pendingRestart = true;
+    return;
   }
+  void restartCamera();
 }

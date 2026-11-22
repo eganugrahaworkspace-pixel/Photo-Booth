@@ -1,7 +1,14 @@
 import QRCode from "qrcode";
 import { newPhotoId } from "../lib/photo.ts";
 import { next, type Event as FlowEvent, type State } from "./flow.ts";
-import { currentDeviceId, listCameras, startCamera } from "./camera.ts";
+import {
+  currentDeviceId,
+  isCameraUsable,
+  listCameras,
+  onCameraState,
+  setCameraHold,
+  startCamera,
+} from "./camera.ts";
 import { renderPhoto } from "./render.ts";
 import { UploadError, uploadPhoto } from "./upload.ts";
 
@@ -29,6 +36,7 @@ const MSG = {
   ready: "Siap. Tekan Ambil Foto.",
   cameraDenied: "Kamera belum diizinkan. Buka Pengaturan Safari, izinkan Kamera, lalu muat ulang.",
   cameraFail: "Kamera tidak bisa dibuka. Muat ulang halaman.",
+  cameraLost: "Kamera terputus atau tidak aktif. Pastikan preview tampil, lalu coba lagi.",
   twibbonFail: "Twibbon gagal dimuat.",
   captureFail: "Kamera belum siap. Tunggu sebentar lalu coba lagi.",
   uploading: "Mengunggah foto…",
@@ -68,6 +76,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let state: State = "idle";
 let cameraReady = false;
 let twibbonReady = false;
+// Camera problems (denied, lost) stay on screen until resolved; transient messages do not replace them.
+let cameraError: string | null = null;
+let msg = "";
+let msgError = false;
 let photoId: string | null = null;
 let photoJpeg: Blob | null = null;
 let keyCache: string | null = storageGet(KEY_STORAGE);
@@ -77,9 +89,10 @@ function send(e: FlowEvent): void {
   render();
 }
 
-function setStatus(msg: string, error = false): void {
-  statusEl.textContent = msg;
-  statusEl.classList.toggle("error", error);
+function setStatus(text: string, error = false): void {
+  msg = text;
+  msgError = error;
+  render();
 }
 
 function render(): void {
@@ -90,12 +103,17 @@ function render(): void {
   retryBtn.hidden = state !== "failed";
   nextBtn.hidden = state !== "done" && state !== "failed";
   qrBox.hidden = state !== "done";
+  document.body.dataset.state = state;
+  statusEl.textContent = cameraError ?? msg;
+  statusEl.classList.toggle("error", cameraError !== null || msgError);
+  setCameraHold(!idle);
 }
 
-function showKeyForm(msg: string): void {
+function showKeyForm(text: string, focus: boolean): void {
   keyForm.hidden = false;
-  setStatus(msg, true);
-  keyInput.focus();
+  setStatus(text, true);
+  // preventScroll keeps a boot-time focus from jumping the page.
+  if (focus) keyInput.focus({ preventScroll: true });
 }
 
 function clearKey(): void {
@@ -108,16 +126,30 @@ function cameraErrorMessage(err: unknown): string {
   return name === "NotAllowedError" || name === "SecurityError" ? MSG.cameraDenied : MSG.cameraFail;
 }
 
+// Keeps readiness and the lost-camera message in step with the track.
+function applyCameraUsable(usable: boolean): void {
+  cameraReady = usable;
+  if (usable) {
+    if (cameraError === MSG.cameraLost) cameraError = null;
+  } else {
+    cameraError = MSG.cameraLost;
+  }
+  render();
+}
+
+function refuseCapture(): void {
+  applyCameraUsable(false);
+}
+
 async function initCamera(): Promise<void> {
   try {
     await startCamera(video);
   } catch (err) {
     cameraReady = false;
-    setStatus(cameraErrorMessage(err), true);
+    cameraError = cameraErrorMessage(err);
     render();
     return;
   }
-  cameraReady = true;
 
   // Labels and ids are only available after permission, so the saved camera is checked now.
   let cameras = await listCameras();
@@ -140,8 +172,7 @@ async function initCamera(): Promise<void> {
   cameraLabel.hidden = cameras.length < 2;
 
   if (keyCache) setStatus(MSG.ready);
-  else setStatus(MSG.keyNeeded, true);
-  render();
+  else showKeyForm(MSG.keyNeeded, false);
 }
 
 async function switchCamera(deviceId: string): Promise<void> {
@@ -156,8 +187,7 @@ async function switchCamera(deviceId: string): Promise<void> {
     cameraSelect.value = currentDeviceId(video) ?? "";
     setStatus("Kamera itu tidak bisa dibuka. Pilih kamera lain.", true);
   }
-  cameraReady = true;
-  render();
+  applyCameraUsable(isCameraUsable(video));
 }
 
 async function loadTwibbon(name: string): Promise<void> {
@@ -177,6 +207,10 @@ async function loadTwibbon(name: string): Promise<void> {
 
 async function shoot(): Promise<void> {
   if (state !== "idle" || !cameraReady || !twibbonReady) return;
+  if (!isCameraUsable(video)) {
+    refuseCapture();
+    return;
+  }
   setStatus("");
   send("shoot");
 
@@ -186,6 +220,13 @@ async function shoot(): Promise<void> {
     await sleep(1000);
   }
   countdownEl.hidden = true;
+
+  // The camera can drop during the countdown; a stale frame must never become a photo.
+  if (!isCameraUsable(video)) {
+    send("error");
+    refuseCapture();
+    return;
+  }
 
   let jpeg: Blob;
   try {
@@ -206,7 +247,7 @@ async function upload(): Promise<void> {
   if (!photoId || !photoJpeg) return;
   const key = keyCache;
   if (!key) {
-    showKeyForm(MSG.keyNeeded);
+    showKeyForm(MSG.keyNeeded, false);
     send("error");
     return;
   }
@@ -217,7 +258,7 @@ async function upload(): Promise<void> {
   } catch (err) {
     if (err instanceof UploadError && err.status === 401) {
       clearKey();
-      showKeyForm(MSG.keyWrong);
+      showKeyForm(MSG.keyWrong, true);
     } else {
       setStatus(MSG.uploadFail, true);
     }
@@ -249,6 +290,8 @@ function reset(): void {
   setStatus(MSG.ready);
 }
 
+onCameraState(applyCameraUsable);
+
 shootBtn.addEventListener("click", () => void shoot());
 retryBtn.addEventListener("click", () => void retry());
 nextBtn.addEventListener("click", reset);
@@ -263,11 +306,8 @@ keyForm.addEventListener("submit", (ev) => {
   keyInput.value = "";
   keyForm.hidden = true;
   setStatus(state === "failed" ? MSG.keySavedRetry : MSG.keySaved);
-  render();
 });
 
 setStatus("Menyiapkan kamera…");
-render();
-if (!keyCache) showKeyForm(MSG.keyNeeded);
 void loadTwibbon(twibbonSelect.value);
 void initCamera();

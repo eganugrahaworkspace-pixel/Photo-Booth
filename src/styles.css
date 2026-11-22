@@ -51,7 +51,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   max-width: 1100px;
   margin: 0 auto;
   padding: 16px;
@@ -63,10 +63,12 @@ body {
   justify-content: center;
 }
 
-/* Preview is always 9:16. Height is capped so it fits a landscape window. */
+/* Preview is always 9:16. Portrait leaves ~300px for the controls so
+   "Ambil Foto" stays on screen; landscape caps it by viewport height. */
 .preview {
   position: relative;
-  width: min(100%, calc(78vh * 9 / 16));
+  width: min(100%, calc(max(100vh - 300px, 240px) * 9 / 16));
+  width: min(100%, calc(max(100dvh - 300px, 240px) * 9 / 16));
   aspect-ratio: 9 / 16;
   container-type: inline-size;
   overflow: hidden;
@@ -179,6 +181,13 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  width: 260px;
+  max-width: 100%;
+}
+
+/* Done: the QR takes the preview's place so it is on screen with the buttons. */
+body[data-state="done"] .preview {
+  display: none;
 }
 
 .qr-box canvas {
