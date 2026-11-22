@@ -211,6 +211,12 @@ body[data-state="done"] .preview {
   border-radius: 8px;
 }
 
+.key-error {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--error);
+}
+
 .qr-box p,
 .notice {
   margin: 0;
@@ -261,10 +267,10 @@ body[data-state="done"] .preview {
   padding: 0 16px 24px;
 }
 
-/* Landscape window (720px and up): preview on the left, controls on the right.
-   The preview width comes from the viewport here, because a percentage
-   would resolve against the auto-width wrapper and collapse to zero. */
-@media (min-width: 720px) and (orientation: landscape) {
+/* Any landscape viewport: preview on the left, controls on the right, so
+   "Ambil Foto" stays on screen. The preview width comes from the viewport here,
+   because a percentage would resolve against the auto-width wrapper and collapse to zero. */
+@media (orientation: landscape) {
   .booth {
     flex-direction: row;
     align-items: flex-start;
@@ -272,7 +278,7 @@ body[data-state="done"] .preview {
   }
 
   .preview {
-    width: min(calc(84vh * 9 / 16), 45vw);
+    width: min(calc(84dvh * 9 / 16), 45vw);
   }
 
   .preview-wrap {

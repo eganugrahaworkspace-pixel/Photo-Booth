@@ -26,6 +26,7 @@ const retryBtn = $<HTMLButtonElement>("retry");
 const nextBtn = $<HTMLButtonElement>("next");
 const keyForm = $<HTMLFormElement>("key-form");
 const keyInput = $<HTMLInputElement>("key-input");
+const keyError = $<HTMLParagraphElement>("key-error");
 const qrBox = $<HTMLDivElement>("qr-box");
 const qrCanvas = $<HTMLCanvasElement>("qr");
 
@@ -44,6 +45,7 @@ const MSG = {
   done: "Foto tersimpan. Pindai QR untuk membuka foto.",
   keyNeeded: "Masukkan kunci booth untuk mengunggah.",
   keyWrong: "Kunci booth salah. Masukkan kunci yang benar, lalu tekan Coba lagi.",
+  keyWrongPanel: "Kunci booth salah. Masukkan lagi.",
   keySaved: "Kunci disimpan.",
   keySavedRetry: "Kunci disimpan. Tekan Coba lagi.",
 };
@@ -258,6 +260,9 @@ async function upload(): Promise<void> {
   } catch (err) {
     if (err instanceof UploadError && err.status === 401) {
       clearKey();
+      // The status line sits under the fixed key panel on small screens, so the reason is repeated inside it.
+      keyError.textContent = MSG.keyWrongPanel;
+      keyError.hidden = false;
       showKeyForm(MSG.keyWrong);
     } else {
       setStatus(MSG.uploadFail, true);
@@ -304,6 +309,8 @@ keyForm.addEventListener("submit", (ev) => {
   keyCache = value;
   storageSet(KEY_STORAGE, value);
   keyInput.value = "";
+  keyError.hidden = true;
+  keyError.textContent = "";
   keyForm.hidden = true;
   setStatus(state === "failed" ? MSG.keySavedRetry : MSG.keySaved);
 });
