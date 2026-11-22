@@ -70,6 +70,8 @@ export function setCameraHold(held: boolean): void {
 export async function restartCamera(): Promise<void> {
   const video = activeVideo;
   if (!video) return;
+  // Shooting stays off until the replacement stream is live; the old frame may be frozen.
+  onState?.(false);
   try {
     await startCamera(video, activeDeviceId);
   } catch {
@@ -110,6 +112,8 @@ function onVisibilityChange(): void {
   if (document.visibilityState !== "visible" || !activeVideo) return;
   if (hold) {
     pendingRestart = true;
+    // Not shootable until the deferred restart completes.
+    onState?.(false);
     return;
   }
   void restartCamera();

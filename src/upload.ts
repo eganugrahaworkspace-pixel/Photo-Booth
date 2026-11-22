@@ -1,4 +1,5 @@
-const UPLOAD_TIMEOUT_MS = 30_000;
+// Venue networks are slow on the first byte; 30 seconds gave up on uploads that were still progressing.
+const UPLOAD_TIMEOUT_MS = 90_000;
 
 export class UploadError extends Error {
   readonly status: number;
@@ -11,7 +12,7 @@ export class UploadError extends Error {
 }
 
 // PUT the JPEG to the API. Throws UploadError for any non-2xx response,
-// a TypeError for network failures, and AbortError after 30 seconds without a response.
+// a TypeError for network failures, and AbortError after 90 seconds without a response.
 export async function uploadPhoto(id: string, jpeg: Blob, key: string): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);

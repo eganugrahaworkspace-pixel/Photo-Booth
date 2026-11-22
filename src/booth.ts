@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import QRCode from "qrcode";
 import { newPhotoId } from "../lib/photo.ts";
 import { next, type Event as FlowEvent, type State } from "./flow.ts";
@@ -17,6 +18,7 @@ const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) 
 const video = $<HTMLVideoElement>("video");
 const twibbonImg = $<HTMLImageElement>("twibbon");
 const twibbonSelect = $<HTMLSelectElement>("twibbon-select");
+const twibbonRetryBtn = $<HTMLButtonElement>("twibbon-retry");
 const cameraLabel = $<HTMLLabelElement>("camera-label");
 const cameraSelect = $<HTMLSelectElement>("camera-select");
 const countdownEl = $<HTMLDivElement>("countdown");
@@ -32,22 +34,45 @@ const qrCanvas = $<HTMLCanvasElement>("qr");
 
 const CAMERA_STORAGE = "booth-camera";
 const KEY_STORAGE = "booth-key";
+const DISCARD_WINDOW_MS = 4000;
+
+// The QR must point at the public production domain, never at whatever origin the operator opened
+// (preview URLs sit behind a login wall). Dev falls back to the local origin.
+function resolvePublicOrigin(): string | null {
+  const raw = (import.meta.env.VITE_PUBLIC_ORIGIN ?? "").trim().replace(/\/+$/, "");
+  if (raw) {
+    try {
+      if (new URL(raw).protocol === "https:") return raw;
+    } catch {
+      // Not a URL; treated as missing below.
+    }
+  }
+  return import.meta.env.DEV ? location.origin : null;
+}
+const PUBLIC_ORIGIN = resolvePublicOrigin();
 
 const MSG = {
   ready: "Siap. Tekan Ambil Foto.",
+  originMissing: "Alamat publik belum diatur. Hubungi admin.",
   cameraDenied: "Kamera belum diizinkan. Buka Pengaturan Safari, izinkan Kamera, lalu muat ulang.",
   cameraFail: "Kamera tidak bisa dibuka. Muat ulang halaman.",
   cameraLost: "Kamera terputus atau tidak aktif. Pastikan preview tampil, lalu coba lagi.",
+  countdownAborted: "Pengambilan foto dibatalkan karena halaman disembunyikan. Tekan Ambil Foto lagi.",
   twibbonFail: "Twibbon gagal dimuat.",
+  twibbonRetry: "Muat ulang twibbon",
   captureFail: "Kamera belum siap. Tunggu sebentar lalu coba lagi.",
   uploading: "Mengunggah foto…",
   uploadFail: "Gagal mengunggah foto. Periksa koneksi lalu tekan Coba lagi.",
+  serverFail: "Server bermasalah. Coba lagi, atau hubungi admin.",
   done: "Foto tersimpan. Pindai QR untuk membuka foto.",
   keyNeeded: "Masukkan kunci booth untuk mengunggah.",
   keyWrong: "Kunci booth salah. Masukkan kunci yang benar, lalu tekan Coba lagi.",
   keyWrongPanel: "Kunci booth salah. Masukkan lagi.",
   keySaved: "Kunci disimpan.",
   keySavedRetry: "Kunci disimpan. Tekan Coba lagi.",
+  preparing: "Menyiapkan kamera…",
+  discardConfirm: "Yakin hapus foto ini?",
+  next: "Foto berikutnya",
 };
 
 // localStorage can throw in private windows or with blocked site data.
@@ -78,10 +103,17 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let state: State = "idle";
 let cameraReady = false;
 let twibbonReady = false;
+let twibbonFailed = false;
 // Camera problems (denied, lost) stay on screen until resolved; transient messages do not replace them.
 let cameraError: string | null = null;
 let msg = "";
 let msgError = false;
+// "Siap" is derived at render time from camera and twibbon readiness, never set as a fixed string.
+let showReady = false;
+// Bumped to abort an in-flight countdown; a stale countdown loop sees the mismatch and stops.
+let countdownRun = 0;
+let discardArmed = false;
+let discardTimer: ReturnType<typeof setTimeout> | null = null;
 let photoId: string | null = null;
 let photoJpeg: Blob | null = null;
 let keyCache: string | null = storageGet(KEY_STORAGE);
@@ -92,22 +124,56 @@ function send(e: FlowEvent): void {
 }
 
 function setStatus(text: string, error = false): void {
+  showReady = false;
   msg = text;
   msgError = error;
   render();
 }
 
+function setReadyStatus(): void {
+  showReady = true;
+  msg = "";
+  msgError = false;
+  render();
+}
+
+// Upload outcomes outrank camera trouble in the upload phases: the guest must learn whether the photo was saved.
+function statusLine(): { text: string; error: boolean } {
+  if (!PUBLIC_ORIGIN) return { text: MSG.originMissing, error: true };
+  if (state === "uploading" || state === "failed" || state === "done") return { text: msg, error: msgError };
+  if (cameraError) return { text: cameraError, error: true };
+  if (twibbonFailed) return { text: MSG.twibbonFail, error: true };
+  if (showReady) return { text: cameraReady && twibbonReady ? MSG.ready : MSG.preparing, error: false };
+  return { text: msg, error: msgError };
+}
+
+function paintNext(): void {
+  nextBtn.textContent = discardArmed ? MSG.discardConfirm : MSG.next;
+}
+
+function disarmDiscard(): void {
+  discardArmed = false;
+  if (discardTimer !== null) clearTimeout(discardTimer);
+  discardTimer = null;
+  paintNext();
+}
+
 function render(): void {
   const idle = state === "idle";
-  shootBtn.disabled = !(idle && cameraReady && twibbonReady);
+  if (state !== "failed") disarmDiscard();
+  shootBtn.disabled = !(idle && PUBLIC_ORIGIN && cameraReady && twibbonReady);
   twibbonSelect.disabled = !idle;
+  twibbonRetryBtn.hidden = !twibbonFailed;
+  twibbonRetryBtn.disabled = !idle;
   cameraSelect.disabled = !idle;
   retryBtn.hidden = state !== "failed";
   nextBtn.hidden = state !== "done" && state !== "failed";
   qrBox.hidden = state !== "done";
   document.body.dataset.state = state;
-  statusEl.textContent = cameraError ?? msg;
-  statusEl.classList.toggle("error", cameraError !== null || msgError);
+  const line = statusLine();
+  statusEl.textContent = line.text;
+  statusEl.classList.toggle("error", line.error);
+  paintNext();
   setCameraHold(!idle);
 }
 
@@ -173,7 +239,7 @@ async function initCamera(): Promise<void> {
   cameraSelect.value = currentDeviceId(video) ?? "";
   cameraLabel.hidden = cameras.length < 2;
 
-  if (keyCache) setStatus(MSG.ready);
+  if (keyCache) setReadyStatus();
   else showKeyForm(MSG.keyNeeded);
 }
 
@@ -183,7 +249,7 @@ async function switchCamera(deviceId: string): Promise<void> {
   try {
     await startCamera(video, deviceId);
     storageSet(CAMERA_STORAGE, deviceId);
-    setStatus(MSG.ready);
+    setReadyStatus();
   } catch {
     // The previous stream is still running, so revert the selection.
     cameraSelect.value = currentDeviceId(video) ?? "";
@@ -194,12 +260,16 @@ async function switchCamera(deviceId: string): Promise<void> {
 
 async function loadTwibbon(name: string): Promise<void> {
   twibbonReady = false;
+  twibbonFailed = false;
   render();
   twibbonImg.src = `/twibbon/${name}.png`;
   try {
     await twibbonImg.decode();
   } catch {
-    if (twibbonSelect.value === name) setStatus(MSG.twibbonFail, true);
+    if (twibbonSelect.value === name) {
+      twibbonFailed = true;
+      render();
+    }
     return;
   }
   if (twibbonSelect.value !== name) return; // A newer choice has replaced this one.
@@ -207,8 +277,16 @@ async function loadTwibbon(name: string): Promise<void> {
   render();
 }
 
+// Hiding the page stops the camera, so a countdown that outlives the visit would capture a frozen frame.
+function abortCountdown(): void {
+  countdownRun++;
+  countdownEl.hidden = true;
+  send("error");
+  setStatus(MSG.countdownAborted, true);
+}
+
 async function shoot(): Promise<void> {
-  if (state !== "idle" || !cameraReady || !twibbonReady) return;
+  if (state !== "idle" || !PUBLIC_ORIGIN || !cameraReady || !twibbonReady) return;
   if (!isCameraUsable(video)) {
     refuseCapture();
     return;
@@ -216,11 +294,14 @@ async function shoot(): Promise<void> {
   setStatus("");
   send("shoot");
 
+  const run = ++countdownRun;
   for (let n = 3; n >= 1; n--) {
+    if (run !== countdownRun) return;
     countdownEl.textContent = String(n);
     countdownEl.hidden = false;
     await sleep(1000);
   }
+  if (run !== countdownRun) return;
   countdownEl.hidden = true;
 
   // The camera can drop during the countdown; a stale frame must never become a photo.
@@ -264,6 +345,8 @@ async function upload(): Promise<void> {
       keyError.textContent = MSG.keyWrongPanel;
       keyError.hidden = false;
       showKeyForm(MSG.keyWrong);
+    } else if (err instanceof UploadError && err.status >= 500) {
+      setStatus(MSG.serverFail, true);
     } else {
       setStatus(MSG.uploadFail, true);
     }
@@ -274,7 +357,8 @@ async function upload(): Promise<void> {
   send("uploaded");
   setStatus(MSG.done);
   try {
-    await QRCode.toCanvas(qrCanvas, `${location.origin}/p/${photoId}`, { width: 240, margin: 1 });
+    if (!PUBLIC_ORIGIN) throw new Error("public origin missing");
+    await QRCode.toCanvas(qrCanvas, `${PUBLIC_ORIGIN}/p/${photoId}`, { width: 240, margin: 1 });
   } catch {
     setStatus("Foto tersimpan, tetapi QR gagal dibuat.", true);
   }
@@ -288,18 +372,31 @@ async function retry(): Promise<void> {
 
 function reset(): void {
   if (state !== "done" && state !== "failed") return;
+  // Discarding an unuploaded photo takes two taps; a finished photo is already saved, so one tap is enough.
+  if (state === "failed" && !discardArmed) {
+    discardArmed = true;
+    discardTimer = setTimeout(disarmDiscard, DISCARD_WINDOW_MS);
+    paintNext();
+    return;
+  }
+  disarmDiscard();
   send("next");
   photoId = null;
   photoJpeg = null;
   qrCanvas.getContext("2d")?.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
-  setStatus(MSG.ready);
+  setReadyStatus();
 }
 
 onCameraState(applyCameraUsable);
 
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && state === "countdown") abortCountdown();
+});
+
 shootBtn.addEventListener("click", () => void shoot());
 retryBtn.addEventListener("click", () => void retry());
 nextBtn.addEventListener("click", reset);
+twibbonRetryBtn.addEventListener("click", () => void loadTwibbon(twibbonSelect.value));
 twibbonSelect.addEventListener("change", () => void loadTwibbon(twibbonSelect.value));
 cameraSelect.addEventListener("change", () => void switchCamera(cameraSelect.value));
 keyForm.addEventListener("submit", (ev) => {
@@ -315,6 +412,6 @@ keyForm.addEventListener("submit", (ev) => {
   setStatus(state === "failed" ? MSG.keySavedRetry : MSG.keySaved);
 });
 
-setStatus("Menyiapkan kamera…");
+setStatus(MSG.preparing);
 void loadTwibbon(twibbonSelect.value);
 void initCamera();
