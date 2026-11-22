@@ -109,11 +109,11 @@ function render(): void {
   setCameraHold(!idle);
 }
 
-function showKeyForm(text: string, focus: boolean): void {
+// The key panel is fixed in the viewport, so focusing it while visible cannot scroll the page.
+function showKeyForm(text: string): void {
   keyForm.hidden = false;
   setStatus(text, true);
-  // preventScroll keeps a boot-time focus from jumping the page.
-  if (focus) keyInput.focus({ preventScroll: true });
+  keyInput.focus({ preventScroll: true });
 }
 
 function clearKey(): void {
@@ -172,7 +172,7 @@ async function initCamera(): Promise<void> {
   cameraLabel.hidden = cameras.length < 2;
 
   if (keyCache) setStatus(MSG.ready);
-  else showKeyForm(MSG.keyNeeded, false);
+  else showKeyForm(MSG.keyNeeded);
 }
 
 async function switchCamera(deviceId: string): Promise<void> {
@@ -247,7 +247,7 @@ async function upload(): Promise<void> {
   if (!photoId || !photoJpeg) return;
   const key = keyCache;
   if (!key) {
-    showKeyForm(MSG.keyNeeded, false);
+    showKeyForm(MSG.keyNeeded);
     send("error");
     return;
   }
@@ -258,7 +258,7 @@ async function upload(): Promise<void> {
   } catch (err) {
     if (err instanceof UploadError && err.status === 401) {
       clearKey();
-      showKeyForm(MSG.keyWrong, true);
+      showKeyForm(MSG.keyWrong);
     } else {
       setStatus(MSG.uploadFail, true);
     }
