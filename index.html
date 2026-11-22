@@ -24,34 +24,38 @@
         <h1>Dari Photobooth</h1>
         <p id="status" class="status" role="status" aria-live="polite">Menyiapkan kamera…</p>
 
-        <label class="field">
-          Twibbon
-          <select id="twibbon-select">
-            <option value="green" selected>Hijau</option>
-            <option value="white">Putih</option>
-          </select>
-        </label>
+        <div class="selectors">
+          <label class="field">
+            Twibbon
+            <select id="twibbon-select">
+              <option value="green" selected>Hijau</option>
+              <option value="white">Putih</option>
+            </select>
+          </label>
 
-        <label class="field" id="camera-label" hidden>
-          Kamera
-          <select id="camera-select"></select>
-        </label>
+          <label class="field" id="camera-label" hidden>
+            Kamera
+            <select id="camera-select"></select>
+          </label>
+        </div>
 
         <button id="shoot" class="primary" type="button" disabled>Ambil Foto</button>
         <button id="retry" type="button" hidden>Coba lagi</button>
         <button id="next" type="button" hidden>Foto berikutnya</button>
-
-        <form id="key-form" class="key-form" hidden>
-          <label class="field">
-            Kunci booth
-            <input id="key-input" type="password" autocomplete="off" />
-          </label>
-          <button type="submit">Simpan kunci</button>
-        </form>
-
-        <p class="notice">Foto disimpan 7 hari lalu dihapus otomatis. Hanya yang punya QR yang bisa membukanya.</p>
       </section>
     </main>
+
+    <footer class="footer">
+      <form id="key-form" class="key-form" hidden>
+        <label class="field">
+          Kunci booth
+          <input id="key-input" type="password" autocomplete="off" />
+        </label>
+        <button type="submit">Simpan kunci</button>
+      </form>
+
+      <p class="notice">Foto disimpan 7 hari lalu dihapus otomatis. Hanya yang punya QR yang bisa membukanya.</p>
+    </footer>
     <script type="module" src="/src/booth.ts"></script>
   </body>
 </html>
