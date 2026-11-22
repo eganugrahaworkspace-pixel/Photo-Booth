@@ -1,7 +1,30 @@
 <!doctype html>
 <html lang="id">
   <head>
-    <title>Foto Booth</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Foto Anda · Dari Photobooth</title>
+    <link rel="stylesheet" href="/src/guest.css" />
   </head>
-  <body></body>
+  <body>
+    <main class="guest">
+      <h1>Foto Anda</h1>
+
+      <div class="frame">
+        <p id="message" class="message" role="status" aria-live="polite">Memuat foto…</p>
+        <img id="photo" class="photo" alt="Foto dari Dari Photobooth" hidden />
+      </div>
+
+      <div class="actions">
+        <button id="save" type="button" class="primary" hidden>Simpan Foto</button>
+        <button id="retry" type="button" hidden>Coba lagi</button>
+      </div>
+
+      <p class="notice">Foto disimpan 7 hari lalu dihapus otomatis.</p>
+    </main>
+
+    <a id="download" download="dari-photobooth.jpg" hidden></a>
+    <script type="module" src="/src/guest.ts"></script>
+  </body>
 </html>
