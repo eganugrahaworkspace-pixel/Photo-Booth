@@ -1,0 +1,216 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f4ef;
+  --fg: #1d1d1b;
+  --card: #ffffff;
+  --muted: #5f5f58;
+  --accent: #2f6b3a;
+  --on-accent: #ffffff;
+  --error: #b3261e;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111110;
+    --fg: #f2f2f0;
+    --card: #1e1e1c;
+    --muted: #a7a79f;
+    --accent: #7fc48f;
+    --on-accent: #111110;
+    --error: #ff8a80;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111110;
+  --fg: #f2f2f0;
+  --card: #1e1e1c;
+  --muted: #a7a79f;
+  --accent: #7fc48f;
+  --on-accent: #111110;
+  --error: #ff8a80;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.booth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.preview-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* Preview is always 9:16. Height is capped so it fits a landscape window. */
+.preview {
+  position: relative;
+  width: min(100%, calc(78vh * 9 / 16));
+  aspect-ratio: 9 / 16;
+  container-type: inline-size;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #000;
+}
+
+.preview video,
+.preview .twibbon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Mirror the camera feed only. The twibbon stays as designed. */
+.preview video {
+  transform: scaleX(-1);
+}
+
+.preview .twibbon {
+  pointer-events: none;
+}
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(80px, 40cqw, 220px);
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+}
+
+.controls h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.status {
+  min-height: 3em;
+  margin: 0;
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+select,
+input {
+  font: inherit;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--muted);
+  background: var(--card);
+  color: var(--fg);
+}
+
+button {
+  font: inherit;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.qr-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.qr-box canvas {
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.qr-box p,
+.notice {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Wide landscape window: preview on the left, controls on the right.
+   The preview width comes from the viewport here, because a percentage
+   would resolve against the auto-width wrapper and collapse to zero. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .booth {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  .preview {
+    width: min(calc(84vh * 9 / 16), 45vw);
+  }
+
+  .preview-wrap {
+    width: auto;
+  }
+}
