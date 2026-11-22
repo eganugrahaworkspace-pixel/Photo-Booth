@@ -81,17 +81,24 @@ function download(): void {
   linkEl.click();
 }
 
+// True while a share sheet is open. A second share() call would be rejected with InvalidStateError,
+// which must not be mistaken for a failed share and sent to the download fallback.
+let sharing = false;
+
 async function save(): Promise<void> {
-  if (!photoBlob) return;
+  if (!photoBlob || sharing) return;
   const file = new File([photoBlob], FILE_NAME, { type: "image/jpeg" });
   // Called straight from the click, before any await, so the browser still counts it as a user gesture.
   if (typeof navigator.share === "function" && typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+    sharing = true;
     try {
       await navigator.share({ files: [file] });
       return;
     } catch (err) {
       // Dismissing the share sheet is not an error. Any other failure falls back to a download.
       if (isAbortError(err)) return;
+    } finally {
+      sharing = false;
     }
   }
   download();
