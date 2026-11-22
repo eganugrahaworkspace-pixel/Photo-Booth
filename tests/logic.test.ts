@@ -39,3 +39,6 @@ test("gagal bisa dicoba lagi lalu selesai", () => {
 test("kamera gagal saat hitung mundur kembali ke idle", () => {
   assert.equal(next("countdown", "error"), "idle");
 });
+test("tanggal upload tidak valid dianggap kedaluwarsa", () => {
+  assert.equal(isExpired(new Date(Number.NaN), new Date(0)), true);
+});

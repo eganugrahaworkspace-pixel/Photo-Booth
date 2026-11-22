@@ -1,0 +1,13 @@
+{
+  "rewrites": [{ "source": "/p/:id", "destination": "/p.html" }],
+  "headers": [
+    {
+      "source": "/p/(.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
+  ],
+  "crons": [{ "path": "/api/cleanup", "schedule": "0 18 * * *" }]
+}

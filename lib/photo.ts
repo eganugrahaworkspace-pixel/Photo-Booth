@@ -20,6 +20,8 @@ export function isJpeg(b: Uint8Array): boolean {
   return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
 }
 
+// An unreadable upload time counts as expired, so a broken record is never served or kept.
 export function isExpired(uploadedAt: Date, now: Date): boolean {
+  if (!Number.isFinite(uploadedAt.getTime())) return true;
   return now.getTime() - uploadedAt.getTime() > RETENTION_MS;
 }
