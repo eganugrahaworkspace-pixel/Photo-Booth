@@ -7,6 +7,9 @@ let watching = false;
 // While a shot is in progress the stream must not be replaced, or the video would clear mid-countdown.
 let hold = false;
 let pendingRestart = false;
+// Bumped by every startCamera call; only the latest call may attach, clear `starting` and report.
+let startToken = 0;
+let starting = false;
 let onState: ((usable: boolean) => void) | null = null;
 
 export function onCameraState(cb: (usable: boolean) => void): void {
@@ -28,27 +31,53 @@ export function isCameraUsable(video: HTMLVideoElement): boolean {
 // Opens the camera. The previous stream is only stopped once the new one is
 // granted, so a failed switch leaves the current preview running.
 export async function startCamera(video: HTMLVideoElement, deviceId?: string): Promise<void> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" }),
-      ...SIZE,
-    },
-    audio: false,
-  });
+  const token = ++startToken;
+  starting = true;
+  // A superseded call stops quietly: the latest call owns the video, the flag and the report.
+  const stale = () => token !== startToken;
+
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" }),
+        ...SIZE,
+      },
+      audio: false,
+    });
+  } catch (err) {
+    if (stale()) return;
+    starting = false;
+    throw err;
+  }
+  if (stale()) {
+    stream.getTracks().forEach((t) => t.stop());
+    return;
+  }
+
   stopStream(video);
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
   watchTrack(video, stream.getVideoTracks()[0]);
-  await video.play();
+  try {
+    await video.play();
+  } catch (err) {
+    if (stale()) return;
+    starting = false;
+    throw err;
+  }
+  if (stale()) return;
 
   activeVideo = video;
   activeDeviceId = deviceId;
   await requestWakeLock();
+  if (stale()) return;
   if (!watching) {
     document.addEventListener("visibilitychange", onVisibilityChange);
     watching = true;
   }
+  starting = false;
   emit(video);
 }
 
@@ -75,19 +104,30 @@ export async function restartCamera(): Promise<void> {
   try {
     await startCamera(video, activeDeviceId);
   } catch {
+    // startCamera only throws for the latest call, so a stale call never reports failure here.
     onState?.(false);
   }
 }
 
 function watchTrack(video: HTMLVideoElement, track: MediaStreamTrack | undefined): void {
   if (!track) return;
-  const notify = () => emit(video);
+  // An event from a track that is no longer the video's track (the old stream) must not report.
+  const notify = () => {
+    if (currentVideoTrack(video) === track) emit(video);
+  };
   track.addEventListener("ended", notify);
   track.addEventListener("mute", notify);
   track.addEventListener("unmute", notify);
 }
 
+function currentVideoTrack(video: HTMLVideoElement): MediaStreamTrack | undefined {
+  const stream = video.srcObject;
+  return stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
+}
+
+// Silent while a start or a deferred restart is pending: the stream on the video is not the one to shoot from yet.
 function emit(video: HTMLVideoElement): void {
+  if (starting || pendingRestart) return;
   onState?.(isCameraUsable(video));
 }
 

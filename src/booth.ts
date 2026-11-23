@@ -315,10 +315,14 @@ async function shoot(): Promise<void> {
   try {
     jpeg = await renderPhoto(video, twibbonImg);
   } catch {
+    // An aborted shot already reset the state and status; its render failure is not the guest's to see.
+    if (run !== countdownRun) return;
     setStatus(MSG.captureFail, true);
     send("error");
     return;
   }
+  // Hiding the page during render aborts the shot: no photo id, no upload.
+  if (run !== countdownRun) return;
   // A new shot gets a new id. Retries reuse the same id and Blob.
   photoId = newPhotoId();
   photoJpeg = jpeg;
