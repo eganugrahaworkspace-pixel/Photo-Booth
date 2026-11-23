@@ -60,6 +60,7 @@ const MSG = {
   countdownAborted: "Pengambilan foto dibatalkan karena halaman disembunyikan. Tekan Ambil Foto lagi.",
   twibbonFail: "Twibbon gagal dimuat.",
   twibbonRetry: "Muat ulang twibbon",
+  setupFail: "Daftar kamera gagal dimuat. Muat ulang halaman.",
   captureFail: "Kamera belum siap. Tunggu sebentar lalu coba lagi.",
   uploading: "Mengunggah foto…",
   uploadFail: "Gagal mengunggah foto. Periksa koneksi lalu tekan Coba lagi.",
@@ -102,6 +103,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let state: State = "idle";
 let cameraReady = false;
+// Set only when initCamera has applied the saved camera and filled the dropdown; until then the booth stays off.
+let setupDone = false;
 let twibbonReady = false;
 let twibbonFailed = false;
 // Camera problems (denied, lost) stay on screen until resolved; transient messages do not replace them.
@@ -196,10 +199,12 @@ function cameraErrorMessage(err: unknown): string {
 
 // Keeps readiness and the lost-camera message in step with the track.
 function applyCameraUsable(usable: boolean): void {
-  cameraReady = usable;
+  // A restart can make the stream usable before setup has run, so setup must finish before shooting is enabled.
+  cameraReady = usable && setupDone;
   if (usable) {
     if (cameraError === MSG.cameraLost) cameraError = null;
-  } else {
+  } else if (!cameraError) {
+    // A setup error (camera never opened) stays on screen; a restart must not replace it with "terputus".
     cameraError = MSG.cameraLost;
   }
   render();
@@ -219,30 +224,41 @@ async function initCamera(): Promise<void> {
     return;
   }
 
-  // Labels and ids are only available after permission, so the saved camera is checked now.
-  let cameras = await listCameras();
-  const saved = storageGet(CAMERA_STORAGE);
-  if (saved && saved !== currentDeviceId(video)) {
-    if (cameras.some((c) => c.deviceId === saved)) {
-      // Shooting stays off while the swap is pending; the default stream is still on the video.
-      cameraReady = false;
-      render();
-      await startCamera(video, saved).catch(() => {
-        // Keep the default camera running.
-      });
-      // A superseded swap reports nothing itself, so the gate decides from the current stream.
-      applyCameraUsable(isCameraUsable(video));
-    } else {
-      storageDel(CAMERA_STORAGE);
+  let cameras: MediaDeviceInfo[];
+  try {
+    // Labels and ids are only available after permission, so the saved camera is checked now.
+    cameras = await listCameras();
+    const saved = storageGet(CAMERA_STORAGE);
+    if (saved && saved !== currentDeviceId(video)) {
+      if (cameras.some((c) => c.deviceId === saved)) {
+        // Shooting stays off while the swap is pending; the default stream is still on the video.
+        cameraReady = false;
+        render();
+        await startCamera(video, saved).catch(() => {
+          // Keep the default camera running.
+        });
+        // A superseded swap reports nothing itself, so the gate decides from the current stream.
+        applyCameraUsable(isCameraUsable(video));
+      } else {
+        storageDel(CAMERA_STORAGE);
+      }
     }
-  }
 
-  cameras = await listCameras();
+    cameras = await listCameras();
+  } catch {
+    // Setup never finished, so setupDone stays false and the booth stays off until a reload.
+    cameraReady = false;
+    setStatus(MSG.setupFail, true);
+    return;
+  }
   cameraSelect.replaceChildren(
     ...cameras.map((c, i) => new Option(c.label || `Kamera ${i + 1}`, c.deviceId)),
   );
   cameraSelect.value = currentDeviceId(video) ?? "";
   cameraLabel.hidden = cameras.length < 2;
+
+  setupDone = true;
+  applyCameraUsable(isCameraUsable(video));
 
   if (keyCache) setReadyStatus();
   else showKeyForm(MSG.keyNeeded);
