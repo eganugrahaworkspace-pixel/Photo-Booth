@@ -56,19 +56,38 @@ function makeStream(id: string): { stream: FakeMediaStream; track: FakeTrack } {
   return { stream: new FakeMediaStream([track]), track };
 }
 
+type FakeVideo = {
+  srcObject: unknown;
+  muted: boolean;
+  playsInline: boolean;
+  paused: boolean;
+  plays: Deferred<void>[];
+  play(): Promise<void>;
+};
+
+// Like a real element: paused is false only once play() has resolved, and true again after a rejection.
 function fakeVideo(): HTMLVideoElement & { plays: Deferred<void>[] } {
-  const plays: Deferred<void>[] = [];
-  return {
+  const video: FakeVideo = {
     srcObject: null,
     muted: false,
     playsInline: false,
-    plays,
+    paused: true,
+    plays: [],
     play() {
       const d = deferred<void>();
-      plays.push(d);
+      video.plays.push(d);
+      d.promise.then(
+        () => {
+          video.paused = false;
+        },
+        () => {
+          video.paused = true;
+        },
+      );
       return d.promise;
     },
-  } as unknown as HTMLVideoElement & { plays: Deferred<void>[] };
+  };
+  return video as unknown as HTMLVideoElement & { plays: Deferred<void>[] };
 }
 
 // Stubs the browser globals camera.ts touches. getUserMedia calls are queued so tests decide the order they settle.
@@ -302,4 +321,108 @@ test("(d) start yang tersusul mengembalikan false, start terbaru mengembalikan t
   gum[0].resolve(makeStream("a").stream);
   await flush();
   assert.equal(await pA, false);
+});
+
+test("(F1) switch yang menyusul restart tertunda dan getUserMedia-nya gagal: kamera tidak siap", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+  const old = makeStream("old");
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(old.stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const calls: boolean[] = [];
+  cam.onCameraState((usable) => calls.push(usable));
+  const restart = cam.restartCamera();
+  await flush();
+  const sw = cam.startCamera(video, "other");
+  await flush();
+  gum[2].reject(new DOMException("busy", "NotReadableError"));
+  await assert.rejects(sw);
+  // The superseded restart's grant arrives late and stops quietly.
+  gum[1].resolve(makeStream("restart").stream);
+  await flush();
+  await restart;
+
+  // The old stream is still attached, but it is the one the restart was replacing.
+  const mark = calls.length;
+  old.track.fire("unmute");
+  assert.equal(calls.slice(mark).includes(true), false);
+  assert.equal(cam.isCameraUsable(video), false);
+});
+
+test("(F2) play() ditolak saat switch: kamera tidak siap", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(makeStream("old").stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const sw = cam.startCamera(video, "other");
+  await flush();
+  gum[1].resolve(makeStream("other").stream);
+  await flush();
+  video.plays[1].reject(new DOMException("blocked", "NotAllowedError"));
+  await assert.rejects(sw);
+
+  assert.equal(video.paused, true);
+  assert.equal(cam.isCameraUsable(video), false);
+});
+
+test("(F3) play() pertama ditolak lalu unmute: kamera tidak siap; kembali dari background memulai ulang dan siap", { timeout: 3000 }, async () => {
+  const { gum, visibilityListeners, doc } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+  const first = makeStream("first");
+
+  const start = cam.startCamera(video);
+  gum[0].resolve(first.stream);
+  await flush();
+  video.plays[0].reject(new DOMException("blocked", "NotAllowedError"));
+  await assert.rejects(start);
+
+  const calls: boolean[] = [];
+  cam.onCameraState((usable) => calls.push(usable));
+  first.track.fire("unmute");
+  assert.equal(calls.includes(true), false);
+  assert.equal(cam.isCameraUsable(video), false);
+
+  doc.visibilityState = "hidden";
+  for (const fn of visibilityListeners) fn();
+  doc.visibilityState = "visible";
+  for (const fn of visibilityListeners) fn();
+  await flush();
+  assert.equal(gum.length, 2, "kembali dari background harus memulai ulang kamera");
+
+  gum[1].resolve(makeStream("second").stream);
+  await flush();
+  video.plays[1].resolve();
+  await flush();
+  assert.equal(cam.isCameraUsable(video), true);
+});
+
+test("(d) switch gagal dengan getUserMedia dan tanpa restart tertunda: stream sebelumnya tetap siap", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(makeStream("old").stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const sw = cam.startCamera(video, "other");
+  await flush();
+  gum[1].reject(new DOMException("busy", "NotReadableError"));
+  await assert.rejects(sw);
+  assert.equal(cam.isCameraUsable(video), true);
 });

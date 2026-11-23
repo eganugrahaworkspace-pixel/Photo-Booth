@@ -10,8 +10,8 @@ let pendingRestart = false;
 // Bumped by every startCamera call; only the latest call may attach, clear `starting` and report.
 let startToken = 0;
 let starting = false;
-// Set when the latest restart fails: the video still holds a stream that was meant to be replaced.
-let restartFailed = false;
+// Set when a restart begins and cleared only when the latest start has its play() resolved: until then the video may hold a frozen frame.
+let needsFreshStream = false;
 let onState: ((usable: boolean) => void) | null = null;
 
 export function onCameraState(cb: (usable: boolean) => void): void {
@@ -23,9 +23,9 @@ export function currentDeviceId(video: HTMLVideoElement): string | undefined {
   return stream instanceof MediaStream ? stream.getVideoTracks()[0]?.getSettings().deviceId : undefined;
 }
 
-// A frame can be stale or black when the track has ended or is muted by the OS, so both must pass.
+// A frame can be stale or black when the track has ended or is muted by the OS, so all of these must pass.
 export function isCameraUsable(video: HTMLVideoElement): boolean {
-  if (starting || pendingRestart || restartFailed) return false;
+  if (starting || pendingRestart || needsFreshStream || video.paused) return false;
   const stream = video.srcObject;
   const track = stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
   return !!track && track.readyState === "live" && !track.muted;
@@ -64,6 +64,13 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
   video.playsInline = true;
   video.srcObject = stream;
   watchTrack(video, stream.getVideoTracks()[0]);
+  // Attached before play(), so a hide/show can restart the camera even when this first play() fails.
+  activeVideo = video;
+  activeDeviceId = deviceId;
+  if (!watching) {
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    watching = true;
+  }
   try {
     await video.play();
   } catch (err) {
@@ -73,15 +80,9 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
   }
   if (stale()) return false;
 
-  activeVideo = video;
-  activeDeviceId = deviceId;
+  needsFreshStream = false;
   await requestWakeLock();
   if (stale()) return false;
-  if (!watching) {
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    watching = true;
-  }
-  restartFailed = false;
   starting = false;
   emit(video);
   return true;
@@ -106,6 +107,7 @@ export async function restartCamera(): Promise<void> {
   const video = activeVideo;
   if (!video) return;
   // Shooting stays off until the replacement stream is live; the old frame may be frozen.
+  needsFreshStream = true;
   onState?.(false);
   const pending = startCamera(video, activeDeviceId);
   // startCamera takes its token synchronously, so this is the token of this restart.
@@ -114,10 +116,7 @@ export async function restartCamera(): Promise<void> {
     await pending;
   } catch {
     // Only a latest start throws. A newer start that began since then owns the state now.
-    if (token === startToken) {
-      restartFailed = true;
-      onState?.(false);
-    }
+    if (token === startToken) onState?.(false);
   }
 }
 
@@ -163,6 +162,7 @@ async function requestWakeLock(): Promise<void> {
 function onVisibilityChange(): void {
   if (document.visibilityState !== "visible" || !activeVideo) return;
   if (hold) {
+    needsFreshStream = true;
     pendingRestart = true;
     // Not shootable until the deferred restart completes.
     onState?.(false);
