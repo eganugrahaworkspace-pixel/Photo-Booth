@@ -204,3 +204,102 @@ test("(c) penolakan play() dari start yang usang tidak dilempar ke pemanggil", {
   video.plays[0].reject(new DOMException("interrupted", "AbortError"));
   await assert.doesNotReject(pA);
 });
+
+test("(a3) unmute dari track lama setelah restart gagal tidak melaporkan kamera siap", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+  const old = makeStream("old");
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(old.stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const calls: boolean[] = [];
+  cam.onCameraState((usable) => calls.push(usable));
+  const restart = cam.restartCamera();
+  await flush();
+  gum[1].reject(new DOMException("busy", "NotReadableError"));
+  await restart;
+  const mark = calls.length;
+
+  // The old track is still attached after the failed restart; its unmute must not re-enable shooting.
+  old.track.fire("unmute");
+  assert.equal(calls.slice(mark).includes(true), false);
+  assert.equal(cam.isCameraUsable(video), false);
+});
+
+test("(b2) start yang berhasil setelah restart gagal melaporkan kamera siap", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(makeStream("old").stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const calls: boolean[] = [];
+  cam.onCameraState((usable) => calls.push(usable));
+  const restart = cam.restartCamera();
+  await flush();
+  gum[1].reject(new DOMException("busy", "NotReadableError"));
+  await restart;
+
+  const next = cam.startCamera(video);
+  gum[2].resolve(makeStream("new").stream);
+  await flush();
+  video.plays[1].resolve();
+  assert.equal(await next, true);
+  assert.equal(calls.at(-1), true);
+  assert.equal(cam.isCameraUsable(video), true);
+});
+
+test("(c2) start pindah kamera yang gagal (bukan restart) tidak menandai kamera gagal", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+  const old = makeStream("old");
+
+  const first = cam.startCamera(video);
+  gum[0].resolve(old.stream);
+  await flush();
+  video.plays[0].resolve();
+  await first;
+
+  const calls: boolean[] = [];
+  cam.onCameraState((usable) => calls.push(usable));
+  const sw = cam.startCamera(video, "other");
+  await flush();
+  gum[1].reject(new DOMException("busy", "NotReadableError"));
+  await assert.rejects(sw);
+
+  // The previous stream is deliberately kept, so its track events still report usable.
+  const mark = calls.length;
+  old.track.fire("unmute");
+  assert.equal(calls.slice(mark).at(-1), true);
+  assert.equal(cam.isCameraUsable(video), true);
+});
+
+test("(d) start yang tersusul mengembalikan false, start terbaru mengembalikan true", { timeout: 3000 }, async () => {
+  const { gum } = installBrowser();
+  const cam = await loadCamera();
+  const video = fakeVideo();
+
+  const pA = cam.startCamera(video);
+  const pB = cam.startCamera(video);
+  await flush();
+
+  gum[1].resolve(makeStream("b").stream);
+  await flush();
+  video.plays[0].resolve();
+  assert.equal(await pB, true);
+
+  // The superseded grant arrives after the latest call has finished.
+  gum[0].resolve(makeStream("a").stream);
+  await flush();
+  assert.equal(await pA, false);
+});

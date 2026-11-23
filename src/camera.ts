@@ -10,6 +10,8 @@ let pendingRestart = false;
 // Bumped by every startCamera call; only the latest call may attach, clear `starting` and report.
 let startToken = 0;
 let starting = false;
+// Set when the latest restart fails: the video still holds a stream that was meant to be replaced.
+let restartFailed = false;
 let onState: ((usable: boolean) => void) | null = null;
 
 export function onCameraState(cb: (usable: boolean) => void): void {
@@ -23,6 +25,7 @@ export function currentDeviceId(video: HTMLVideoElement): string | undefined {
 
 // A frame can be stale or black when the track has ended or is muted by the OS, so both must pass.
 export function isCameraUsable(video: HTMLVideoElement): boolean {
+  if (starting || pendingRestart || restartFailed) return false;
   const stream = video.srcObject;
   const track = stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
   return !!track && track.readyState === "live" && !track.muted;
@@ -30,7 +33,8 @@ export function isCameraUsable(video: HTMLVideoElement): boolean {
 
 // Opens the camera. The previous stream is only stopped once the new one is
 // granted, so a failed switch leaves the current preview running.
-export async function startCamera(video: HTMLVideoElement, deviceId?: string): Promise<void> {
+// Resolves true when this call was applied, false when a newer start superseded it.
+export async function startCamera(video: HTMLVideoElement, deviceId?: string): Promise<boolean> {
   const token = ++startToken;
   starting = true;
   // A superseded call stops quietly: the latest call owns the video, the flag and the report.
@@ -46,13 +50,13 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
       audio: false,
     });
   } catch (err) {
-    if (stale()) return;
+    if (stale()) return false;
     starting = false;
     throw err;
   }
   if (stale()) {
     stream.getTracks().forEach((t) => t.stop());
-    return;
+    return false;
   }
 
   stopStream(video);
@@ -63,22 +67,24 @@ export async function startCamera(video: HTMLVideoElement, deviceId?: string): P
   try {
     await video.play();
   } catch (err) {
-    if (stale()) return;
+    if (stale()) return false;
     starting = false;
     throw err;
   }
-  if (stale()) return;
+  if (stale()) return false;
 
   activeVideo = video;
   activeDeviceId = deviceId;
   await requestWakeLock();
-  if (stale()) return;
+  if (stale()) return false;
   if (!watching) {
     document.addEventListener("visibilitychange", onVisibilityChange);
     watching = true;
   }
+  restartFailed = false;
   starting = false;
   emit(video);
+  return true;
 }
 
 // Only meaningful after camera permission is granted: labels and ids are blank before that.
@@ -101,11 +107,17 @@ export async function restartCamera(): Promise<void> {
   if (!video) return;
   // Shooting stays off until the replacement stream is live; the old frame may be frozen.
   onState?.(false);
+  const pending = startCamera(video, activeDeviceId);
+  // startCamera takes its token synchronously, so this is the token of this restart.
+  const token = startToken;
   try {
-    await startCamera(video, activeDeviceId);
+    await pending;
   } catch {
-    // startCamera only throws for the latest call, so a stale call never reports failure here.
-    onState?.(false);
+    // Only a latest start throws. A newer start that began since then owns the state now.
+    if (token === startToken) {
+      restartFailed = true;
+      onState?.(false);
+    }
   }
 }
 

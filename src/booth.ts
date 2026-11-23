@@ -56,7 +56,7 @@ const MSG = {
   originMissing: "Alamat publik belum diatur. Hubungi admin.",
   cameraDenied: "Kamera belum diizinkan. Buka Pengaturan Safari, izinkan Kamera, lalu muat ulang.",
   cameraFail: "Kamera tidak bisa dibuka. Muat ulang halaman.",
-  cameraLost: "Kamera terputus atau tidak aktif. Pastikan preview tampil, lalu coba lagi.",
+  cameraLost: "Kamera terputus. Sambungkan lagi, lalu muat ulang halaman.",
   countdownAborted: "Pengambilan foto dibatalkan karena halaman disembunyikan. Tekan Ambil Foto lagi.",
   twibbonFail: "Twibbon gagal dimuat.",
   twibbonRetry: "Muat ulang twibbon",
@@ -224,9 +224,14 @@ async function initCamera(): Promise<void> {
   const saved = storageGet(CAMERA_STORAGE);
   if (saved && saved !== currentDeviceId(video)) {
     if (cameras.some((c) => c.deviceId === saved)) {
+      // Shooting stays off while the swap is pending; the default stream is still on the video.
+      cameraReady = false;
+      render();
       await startCamera(video, saved).catch(() => {
         // Keep the default camera running.
       });
+      // A superseded swap reports nothing itself, so the gate decides from the current stream.
+      applyCameraUsable(isCameraUsable(video));
     } else {
       storageDel(CAMERA_STORAGE);
     }
@@ -247,7 +252,8 @@ async function switchCamera(deviceId: string): Promise<void> {
   cameraReady = false;
   render();
   try {
-    await startCamera(video, deviceId);
+    // A superseded switch leaves the saved id, the status and the readiness to the newer start.
+    if (!(await startCamera(video, deviceId))) return;
     storageSet(CAMERA_STORAGE, deviceId);
     setReadyStatus();
   } catch {
