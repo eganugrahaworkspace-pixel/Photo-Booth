@@ -4,7 +4,8 @@ import { MAX_BYTES, isPhotoId, isJpeg, isExpired } from "./photo.js";
 // Storage port. The real adapter (lib/blob-store.ts) wraps @vercel/blob;
 // tests use an in-memory fake. Keeping this file free of @vercel/blob lets it run under node:test.
 export interface Store {
-  put(path: string, b: Uint8Array): Promise<void>;
+  // "exists" means the path already held a photo and nothing was written. Never overwrites.
+  put(path: string, b: Uint8Array): Promise<"stored" | "exists">;
   head(path: string): Promise<{ uploadedAt: Date } | null>;
   read(path: string): Promise<ReadableStream<Uint8Array> | null>;
   list(): Promise<{ path: string; uploadedAt: Date }[]>;
@@ -23,17 +24,13 @@ function secretMatches(given: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-export async function handlePut(
-  req: { id: string; key: string | null; body: Uint8Array },
-  store: Store,
-  boothKey: string,
-): Promise<number> {
-  if (req.key === null || !secretMatches(req.key, boothKey)) return 401;
+// The id comes from the guest's QR link, so an existing photo is never replaced: a second upload gets 409.
+export async function handlePut(req: { id: string; body: Uint8Array }, store: Store): Promise<number> {
   if (!isPhotoId(req.id)) return 400;
   if (req.body.byteLength > MAX_BYTES) return 413;
   if (!isJpeg(req.body)) return 415;
-  await store.put(photoPath(req.id), req.body);
-  return 201;
+  const outcome = await store.put(photoPath(req.id), req.body);
+  return outcome === "exists" ? 409 : 201;
 }
 
 // Returns the storage path of a live photo, or null. Never reads the bytes.

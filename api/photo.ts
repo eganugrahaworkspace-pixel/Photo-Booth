@@ -32,15 +32,7 @@ async function readBody(request: Request): Promise<Uint8Array> {
 
 export async function PUT(request: Request): Promise<Response> {
   const id = new URL(request.url).searchParams.get("id") ?? "";
-  const status = await handlePut(
-    {
-      id,
-      key: request.headers.get("x-booth-key"),
-      body: await readBody(request),
-    },
-    blobStore,
-    process.env.BOOTH_KEY ?? "",
-  );
+  const status = await handlePut({ id, body: await readBody(request) }, blobStore);
   return new Response(null, { status });
 }
 

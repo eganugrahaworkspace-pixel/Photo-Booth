@@ -33,7 +33,9 @@ function fakeStore(clock: Date = NOW) {
       files.set(`photos/${id}.jpg`, { bytes: JPEG, uploadedAt });
     },
     async put(path, b) {
+      if (files.has(path)) return "exists";
       files.set(path, { bytes: b, uploadedAt: clock });
+      return "stored";
     },
     async head(path) {
       const f = files.get(path);
@@ -61,49 +63,53 @@ function fakeStore(clock: Date = NOW) {
   return store;
 }
 
-test("kunci salah 401", async () => {
-  assert.equal(await handlePut({ id: ID, key: "x", body: JPEG }, fakeStore(), "k"), 401);
-});
-test("kunci hilang atau BOOTH_KEY kosong 401", async () => {
-  assert.equal(await handlePut({ id: ID, key: null, body: JPEG }, fakeStore(), "k"), 401);
-  assert.equal(await handlePut({ id: ID, key: "", body: JPEG }, fakeStore(), ""), 401);
-});
-test("kunci dengan panjang berbeda tidak melempar", async () => {
-  assert.equal(await handlePut({ id: ID, key: "kk", body: JPEG }, fakeStore(), "k"), 401);
+test("upload tanpa kunci apa pun tetap 201", async () => {
+  const store = fakeStore();
+  assert.equal(await handlePut({ id: ID, body: JPEG }, store), 201);
+  assert.deepEqual(store.files.get(`photos/${ID}.jpg`)?.bytes, JPEG);
 });
 test("id ngawur 400", async () => {
-  assert.equal(await handlePut({ id: "../a", key: "k", body: JPEG }, fakeStore(), "k"), 400);
+  assert.equal(await handlePut({ id: "../a", body: JPEG }, fakeStore()), 400);
 });
 test("bukan jpeg 415", async () => {
-  assert.equal(await handlePut({ id: ID, key: "k", body: PNG }, fakeStore(), "k"), 415);
+  assert.equal(await handlePut({ id: ID, body: PNG }, fakeStore()), 415);
 });
 test("terlalu besar 413", async () => {
-  assert.equal(await handlePut({ id: ID, key: "k", body: HUGE_JPEG }, fakeStore(), "k"), 413);
+  assert.equal(await handlePut({ id: ID, body: HUGE_JPEG }, fakeStore()), 413);
 });
-test("urutan cek: kunci sebelum id, id sebelum ukuran", async () => {
-  assert.equal(await handlePut({ id: "../a", key: "x", body: HUGE_JPEG }, fakeStore(), "k"), 401);
-  assert.equal(await handlePut({ id: "../a", key: "k", body: HUGE_JPEG }, fakeStore(), "k"), 400);
+test("urutan cek: id sebelum ukuran", async () => {
+  assert.equal(await handlePut({ id: "../a", body: HUGE_JPEG }, fakeStore()), 400);
 });
 test("upload sah 201 dan tersimpan di photos/<id>.jpg", async () => {
   const store = fakeStore();
-  assert.equal(await handlePut({ id: ID, key: "k", body: JPEG }, store, "k"), 201);
+  assert.equal(await handlePut({ id: ID, body: JPEG }, store), 201);
   assert.deepEqual(store.files.get(`photos/${ID}.jpg`)?.bytes, JPEG);
 });
-test("retry id sama hanya satu file", async () => {
+test("upload kedua ke id yang sama 409 dan byte pertama tetap", async () => {
   const store = fakeStore();
-  await handlePut({ id: ID, key: "k", body: JPEG }, store, "k");
-  assert.equal(await handlePut({ id: ID, key: "k", body: JPEG }, store, "k"), 201);
+  const first = new Uint8Array([0xff, 0xd8, 0xff, 0x01]);
+  const second = new Uint8Array([0xff, 0xd8, 0xff, 0x02, 0x03]);
+  assert.equal(await handlePut({ id: ID, body: first }, store), 201);
+  assert.equal(await handlePut({ id: ID, body: second }, store), 409);
+  assert.deepEqual(store.files.get(`photos/${ID}.jpg`)?.bytes, first);
   assert.equal((await store.list()).length, 1);
+});
+test("kegagalan storage selain already-exists dilempar, bukan 409", async () => {
+  const store = fakeStore();
+  store.put = async () => {
+    throw new Error("storage down");
+  };
+  await assert.rejects(handlePut({ id: ID, body: JPEG }, store), /storage down/);
 });
 test("resolvePhoto mengembalikan path untuk foto segar", async () => {
   const store = fakeStore();
-  await handlePut({ id: ID, key: "k", body: JPEG }, store, "k");
+  await handlePut({ id: ID, body: JPEG }, store);
   assert.equal(await resolvePhoto(ID, store, NOW), `photos/${ID}.jpg`);
   assert.equal(store.reads.length, 0);
 });
 test("openPhoto mengalirkan isi foto segar", async () => {
   const store = fakeStore();
-  await handlePut({ id: ID, key: "k", body: JPEG }, store, "k");
+  await handlePut({ id: ID, body: JPEG }, store);
   const stream = await openPhoto(ID, store, NOW);
   assert.ok(stream);
   assert.deepEqual(new Uint8Array(await new Response(stream).arrayBuffer()), JPEG);

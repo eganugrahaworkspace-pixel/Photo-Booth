@@ -26,14 +26,12 @@ const statusEl = $<HTMLParagraphElement>("status");
 const shootBtn = $<HTMLButtonElement>("shoot");
 const retryBtn = $<HTMLButtonElement>("retry");
 const nextBtn = $<HTMLButtonElement>("next");
-const keyForm = $<HTMLFormElement>("key-form");
-const keyInput = $<HTMLInputElement>("key-input");
-const keyError = $<HTMLParagraphElement>("key-error");
 const qrBox = $<HTMLDivElement>("qr-box");
 const qrCanvas = $<HTMLCanvasElement>("qr");
 
 const CAMERA_STORAGE = "booth-camera";
-const KEY_STORAGE = "booth-key";
+// Earlier builds stored an operator key here; it is no longer used and is removed on load.
+const LEGACY_KEY_STORAGE = "booth-key";
 const DISCARD_WINDOW_MS = 4000;
 
 // The QR must point at the public production domain, never at whatever origin the operator opened
@@ -66,11 +64,6 @@ const MSG = {
   uploadFail: "Gagal mengunggah foto. Periksa koneksi lalu tekan Coba lagi.",
   serverFail: "Server bermasalah. Coba lagi, atau hubungi admin.",
   done: "Foto tersimpan. Pindai QR untuk membuka foto.",
-  keyNeeded: "Masukkan kunci booth untuk mengunggah.",
-  keyWrong: "Kunci booth salah. Masukkan kunci yang benar, lalu tekan Coba lagi.",
-  keyWrongPanel: "Kunci booth salah. Masukkan lagi.",
-  keySaved: "Kunci disimpan.",
-  keySavedRetry: "Kunci disimpan. Tekan Coba lagi.",
   preparing: "Menyiapkan kamera…",
   discardConfirm: "Yakin hapus foto ini?",
   next: "Foto berikutnya",
@@ -119,7 +112,6 @@ let discardArmed = false;
 let discardTimer: ReturnType<typeof setTimeout> | null = null;
 let photoId: string | null = null;
 let photoJpeg: Blob | null = null;
-let keyCache: string | null = storageGet(KEY_STORAGE);
 
 function send(e: FlowEvent): void {
   state = next(state, e);
@@ -178,18 +170,6 @@ function render(): void {
   statusEl.classList.toggle("error", line.error);
   paintNext();
   setCameraHold(!idle);
-}
-
-// The key panel is fixed in the viewport, so focusing it while visible cannot scroll the page.
-function showKeyForm(text: string): void {
-  keyForm.hidden = false;
-  setStatus(text, true);
-  keyInput.focus({ preventScroll: true });
-}
-
-function clearKey(): void {
-  keyCache = null;
-  storageDel(KEY_STORAGE);
 }
 
 function cameraErrorMessage(err: unknown): string {
@@ -259,9 +239,7 @@ async function initCamera(): Promise<void> {
 
   setupDone = true;
   applyCameraUsable(isCameraUsable(video));
-
-  if (keyCache) setReadyStatus();
-  else showKeyForm(MSG.keyNeeded);
+  setReadyStatus();
 }
 
 async function switchCamera(deviceId: string): Promise<void> {
@@ -354,24 +332,12 @@ async function shoot(): Promise<void> {
 
 async function upload(): Promise<void> {
   if (!photoId || !photoJpeg) return;
-  const key = keyCache;
-  if (!key) {
-    showKeyForm(MSG.keyNeeded);
-    send("error");
-    return;
-  }
 
   setStatus(MSG.uploading);
   try {
-    await uploadPhoto(photoId, photoJpeg, key);
+    await uploadPhoto(photoId, photoJpeg);
   } catch (err) {
-    if (err instanceof UploadError && err.status === 401) {
-      clearKey();
-      // The status line sits under the fixed key panel on small screens, so the reason is repeated inside it.
-      keyError.textContent = MSG.keyWrongPanel;
-      keyError.hidden = false;
-      showKeyForm(MSG.keyWrong);
-    } else if (err instanceof UploadError && err.status >= 500) {
+    if (err instanceof UploadError && err.status >= 500) {
       setStatus(MSG.serverFail, true);
     } else {
       setStatus(MSG.uploadFail, true);
@@ -425,19 +391,7 @@ nextBtn.addEventListener("click", reset);
 twibbonRetryBtn.addEventListener("click", () => void loadTwibbon(twibbonSelect.value));
 twibbonSelect.addEventListener("change", () => void loadTwibbon(twibbonSelect.value));
 cameraSelect.addEventListener("change", () => void switchCamera(cameraSelect.value));
-keyForm.addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  const value = keyInput.value.trim();
-  if (!value) return;
-  keyCache = value;
-  storageSet(KEY_STORAGE, value);
-  keyInput.value = "";
-  keyError.hidden = true;
-  keyError.textContent = "";
-  keyForm.hidden = true;
-  setStatus(state === "failed" ? MSG.keySavedRetry : MSG.keySaved);
-});
-
+storageDel(LEGACY_KEY_STORAGE);
 setStatus(MSG.preparing);
 void loadTwibbon(twibbonSelect.value);
 void initCamera();
