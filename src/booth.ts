@@ -10,18 +10,25 @@ import {
   setCameraHold,
   startCamera,
 } from "./camera.ts";
-import { renderPhoto } from "./render.ts";
+import { renderCollage, renderPhoto, captureFrame } from "./render.ts";
+import { collageCells, countdownFor, parseMode, type Cell, type Mode } from "./collage.ts";
 import { UploadError, uploadPhoto } from "./upload.ts";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 const video = $<HTMLVideoElement>("video");
+const previewEl = $<HTMLDivElement>("preview");
 const twibbonImg = $<HTMLImageElement>("twibbon");
 const twibbonSelect = $<HTMLSelectElement>("twibbon-select");
 const twibbonRetryBtn = $<HTMLButtonElement>("twibbon-retry");
+const modeGroup = $<HTMLFieldSetElement>("mode");
+const modeInputs = document.querySelectorAll<HTMLInputElement>('input[name="mode"]');
 const cameraLabel = $<HTMLLabelElement>("camera-label");
 const cameraSelect = $<HTMLSelectElement>("camera-select");
 const countdownEl = $<HTMLDivElement>("countdown");
+const guideEl = $<HTMLDivElement>("crop-guide");
+const countdownNumEl = $<HTMLSpanElement>("countdown-num");
+const countdownLabelEl = $<HTMLSpanElement>("countdown-label");
 const statusEl = $<HTMLParagraphElement>("status");
 const shootBtn = $<HTMLButtonElement>("shoot");
 const retryBtn = $<HTMLButtonElement>("retry");
@@ -37,6 +44,10 @@ const LEGACY_KEY_STORAGE = "booth-key";
 const DISCARD_WINDOW_MS = 4000;
 // A finished photo is cleared after this so the next visitor never sees the previous guest's photo.
 const DONE_AUTO_RESET_MS = 60_000;
+// The chosen photo count is kept across visits; it is not reset with the rest of the flow.
+const MODE_STORAGE = "booth-mode";
+const COLLAGE_FLASH_MS = 150;
+const SHOT_STEP_MS = 700;
 
 // The QR must point at the public production domain, never at whatever origin the operator opened
 // (preview URLs sit behind a login wall). Dev falls back to the local origin.
@@ -181,6 +192,8 @@ function render(): void {
   const idle = state === "idle";
   if (state !== "failed") disarmDiscard();
   shootBtn.disabled = !(idle && PUBLIC_ORIGIN && cameraReady && twibbonReady);
+  modeInputs.forEach((input) => (input.disabled = !idle));
+  updateGuide();
   twibbonSelect.disabled = !idle;
   twibbonRetryBtn.hidden = !twibbonFailed;
   twibbonRetryBtn.disabled = !idle;
@@ -311,42 +324,118 @@ function abortCountdown(): void {
   setStatus(MSG.countdownAborted, true);
 }
 
+// Shot canvases can be several MB each at 4:3 cell sizes; release them as soon as they are composed or dropped.
+function releaseFrames(frames: HTMLCanvasElement[]): void {
+  for (const f of frames) {
+    f.width = 0;
+    f.height = 0;
+  }
+  frames.length = 0;
+}
+
+// Crop guide: the first cell's aspect, centred and as large as fits the 9:16 preview.
+function layoutGuide(cell: Cell): void {
+  const W = previewEl.clientWidth;
+  const H = previewEl.clientHeight;
+  if (!W || !H) return;
+  const a = cell.w / cell.h;
+  const w = W / H > a ? H * a : W;
+  const h = W / H > a ? H : W / a;
+  guideEl.style.width = `${w}px`;
+  guideEl.style.height = `${h}px`;
+}
+
+function updateGuide(): void {
+  const mode = selectedMode();
+  const show = mode > 1 && (state === "idle" || state === "countdown");
+  guideEl.hidden = !show;
+  if (show) layoutGuide(collageCells(mode)[0]);
+}
+
+function selectedMode(): Mode {
+  return parseMode(document.querySelector<HTMLInputElement>('input[name="mode"]:checked')?.value);
+}
+
+function setCountdownLabel(text: string): void {
+  countdownLabelEl.textContent = text;
+  countdownLabelEl.hidden = text === "";
+}
+
+// Brief white flash over the preview after a collage shot. Reduced motion gets no flash and no pause.
+async function flashPreview(): Promise<void> {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  previewEl.classList.add("flash");
+  await sleep(COLLAGE_FLASH_MS);
+  previewEl.classList.remove("flash");
+}
+
+// Takes every shot for the chosen mode. Returns false on abort or failure, after the state is already set.
+async function takeShots(run: number, mode: Mode, cells: Cell[], frames: HTMLCanvasElement[]): Promise<boolean> {
+  for (let shot = 0; shot < mode; shot++) {
+    for (const n of countdownFor(shot)) {
+      if (run !== countdownRun) return false;
+      countdownNumEl.textContent = String(n);
+      setCountdownLabel(mode > 1 ? `Foto ${shot + 1} dari ${mode}` : "");
+      countdownEl.hidden = false;
+      await sleep(SHOT_STEP_MS);
+    }
+    if (run !== countdownRun) return false;
+    countdownEl.hidden = true;
+
+    // The camera can drop during the countdown; a stale frame must never become a photo.
+    if (!isCameraUsable(video)) {
+      send("error");
+      refuseCapture();
+      return false;
+    }
+
+    if (mode > 1) {
+      try {
+        frames.push(captureFrame(video, cells[shot]));
+      } catch {
+        if (run !== countdownRun) return false;
+        setStatus(MSG.captureFail, true);
+        send("error");
+        return false;
+      }
+      await flashPreview();
+      if (run !== countdownRun) return false;
+    }
+  }
+  return true;
+}
+
 async function shoot(): Promise<void> {
   if (state !== "idle" || !PUBLIC_ORIGIN || !cameraReady || !twibbonReady) return;
   if (!isCameraUsable(video)) {
     refuseCapture();
     return;
   }
+  const mode = selectedMode();
+  const cells = collageCells(mode);
   setStatus("");
   send("shoot");
 
+  // Any abort or failure drops every frame taken so far: nothing partial is composed.
   const run = ++countdownRun;
-  for (let n = 3; n >= 1; n--) {
-    if (run !== countdownRun) return;
-    countdownEl.textContent = String(n);
-    countdownEl.hidden = false;
-    await sleep(700);
-  }
-  if (run !== countdownRun) return;
-  countdownEl.hidden = true;
-
-  // The camera can drop during the countdown; a stale frame must never become a photo.
-  if (!isCameraUsable(video)) {
-    send("error");
-    refuseCapture();
+  const frames: HTMLCanvasElement[] = [];
+  if (!(await takeShots(run, mode, cells, frames))) {
+    releaseFrames(frames);
     return;
   }
 
   let jpeg: Blob;
   try {
-    jpeg = await renderPhoto(video, twibbonImg);
+    jpeg = mode === 1 ? await renderPhoto(video, twibbonImg) : await renderCollage(frames, cells, twibbonImg);
   } catch {
+    releaseFrames(frames);
     // An aborted shot already reset the state and status; its render failure is not the guest's to see.
     if (run !== countdownRun) return;
     setStatus(MSG.captureFail, true);
     send("error");
     return;
   }
+  releaseFrames(frames);
   // Hiding the page during render aborts the shot: no photo id, no upload.
   if (run !== countdownRun) return;
   // A new shot gets a new id. Retries reuse the same id and Blob.
@@ -424,6 +513,16 @@ nextBtn.addEventListener("click", reset);
 twibbonRetryBtn.addEventListener("click", () => void loadTwibbon(twibbonSelect.value));
 twibbonSelect.addEventListener("change", () => void loadTwibbon(twibbonSelect.value));
 cameraSelect.addEventListener("change", () => void switchCamera(cameraSelect.value));
+modeGroup.addEventListener("change", () => {
+  storageSet(MODE_STORAGE, String(selectedMode()));
+  render();
+});
+new ResizeObserver(() => updateGuide()).observe(previewEl);
+{
+  const savedMode = parseMode(storageGet(MODE_STORAGE));
+  const savedInput = document.querySelector<HTMLInputElement>(`input[name="mode"][value="${savedMode}"]`);
+  if (savedInput) savedInput.checked = true;
+}
 storageDel(LEGACY_KEY_STORAGE);
 setStatus(MSG.preparing);
 void loadTwibbon(twibbonSelect.value);

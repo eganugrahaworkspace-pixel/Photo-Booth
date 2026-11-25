@@ -98,12 +98,39 @@ body {
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: clamp(80px, 40cqw, 220px);
   font-weight: 700;
   color: #fff;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+/* Crop guide for multi-photo modes: size is set from JS; the huge shadow dims everything outside it. */
+.crop-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px dashed #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* "Foto k dari N" under the number in multi-photo modes. */
+.countdown__label {
+  font-size: clamp(14px, 7cqw, 36px);
+  font-weight: 600;
+}
+
+/* White flash after each collage shot. Skipped by JS under prefers-reduced-motion. */
+.preview.flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
 }
 
 .controls {
@@ -366,12 +393,93 @@ body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"
 
 .selectors {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .selectors .field {
   flex: 1 1 0;
   min-width: 0;
+}
+
+/* Photo-count control takes its own row; Twibbon and Kamera share the row below. */
+.selectors .mode {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.mode legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.mode__options {
+  display: flex;
+}
+
+.mode__option {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mode__option + .mode__option {
+  margin-left: -1px;
+}
+
+/* Radio is kept for keyboard and screen readers; the span is what the guest sees. */
+.mode__option input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.mode__option span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border: 1px solid var(--accent);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mode__option:first-child span {
+  border-radius: 10px 0 0 10px;
+}
+
+.mode__option:last-child span {
+  border-radius: 0 10px 10px 0;
+}
+
+.mode__option input:checked + span {
+  background: #155b55;
+  border-color: #155b55;
+  color: #fff;
+}
+
+.mode__option input:focus-visible + span {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.mode__option input:disabled + span {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .footer {

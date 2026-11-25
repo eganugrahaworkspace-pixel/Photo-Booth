@@ -12,7 +12,11 @@
         <div id="preview" class="preview">
           <video id="video" autoplay playsinline muted></video>
           <img id="twibbon" class="twibbon" src="/twibbon/green.png" alt="" />
-          <div id="countdown" class="countdown" hidden></div>
+          <div id="crop-guide" class="crop-guide" aria-hidden="true" hidden></div>
+          <div id="countdown" class="countdown" hidden>
+            <span id="countdown-num"></span>
+            <span id="countdown-label" class="countdown__label" hidden></span>
+          </div>
         </div>
         <img id="result" class="result" alt="Foto yang baru diambil" hidden />
         <div id="qr-box" class="qr-box" hidden>
@@ -45,6 +49,16 @@
         </div>
 
         <div class="selectors">
+          <fieldset class="field mode" id="mode">
+            <legend>Jumlah foto</legend>
+            <div class="mode__options">
+              <label class="mode__option"><input type="radio" name="mode" value="1" checked /><span>1</span></label>
+              <label class="mode__option"><input type="radio" name="mode" value="2" /><span>2</span></label>
+              <label class="mode__option"><input type="radio" name="mode" value="4" /><span>4</span></label>
+              <label class="mode__option"><input type="radio" name="mode" value="6" /><span>6</span></label>
+            </div>
+          </fieldset>
+
           <label class="field">
             Twibbon
             <select id="twibbon-select">
