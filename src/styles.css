@@ -356,8 +356,8 @@ body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"
 
 body[data-state="idle"] .steps__item:is([data-step="1"], [data-step="2"])::before,
 body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"]) .steps__item[data-step="2"]::before {
-  background: #155b55;
-  border-color: #155b55;
+  background: #267a71;
+  border-color: #f2f2f0;
   color: #fff;
 }
 
@@ -466,8 +466,8 @@ body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"
 }
 
 .mode__option input:checked + span {
-  background: #155b55;
-  border-color: #155b55;
+  background: #267a71;
+  border-color: #f2f2f0;
   color: #fff;
 }
 
@@ -516,4 +516,42 @@ body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"
     height: max(280px, calc(100dvh - 100px));
     width: auto;
   }
+}
+
+/* Booth page only (body.booth-page, see index.html). The booth is always on the dark teal brand
+   background, so it uses the dark tokens in both colour schemes. Contrast is measured on the
+   gradient stops #0E3B37 (darkest) and #155B55 (lightest). */
+body.booth-page {
+  --bg: transparent;
+  --fg: #f2f2f0;
+  --card: rgba(0, 0, 0, 0.25);
+  --muted: #c9d3d0;
+  --accent: #7fc48f;
+  --on-accent: #111110;
+  --error: #ffc2bc;
+  --line: rgba(255, 255, 255, 0.12);
+  color-scheme: dark;
+  background: transparent;
+}
+
+/* Fixed full-viewport layer: brand gradient with faint route lines on top. A pseudo-element
+   avoids background-attachment: fixed, which iOS ignores. */
+body.booth-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    url(/bg-route.svg) center / cover no-repeat,
+    linear-gradient(160deg, #0e3b37 0%, #155b55 100%);
+}
+
+body.booth-page select,
+body.booth-page input {
+  border-color: var(--line);
+}
+
+body.booth-page .mode__option span {
+  border-color: var(--line);
 }

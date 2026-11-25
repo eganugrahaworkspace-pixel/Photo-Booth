@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" preserveAspectRatio="xMidYMid slice">
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <g id="route-a">
+      <path d="M-40 260 C 260 120, 380 420, 560 300 S 900 120, 1120 330" stroke-width="60" opacity="0.05"/>
+      <path d="M-40 260 C 260 120, 380 420, 560 300 S 900 120, 1120 330" stroke-width="6" stroke-dasharray="28 24" opacity="0.12"/>
+    </g>
+    <g id="route-b">
+      <path d="M-40 1010 C 200 860, 420 1160, 620 980 S 980 800, 1120 1080" stroke-width="60" opacity="0.05"/>
+      <path d="M-40 1010 C 200 860, 420 1160, 620 980 S 980 800, 1120 1080" stroke-width="6" stroke-dasharray="28 24" opacity="0.12"/>
+    </g>
+    <g id="route-c">
+      <path d="M120 1640 C 320 1480, 560 1800, 800 1620 S 1040 1500, 1120 1700" stroke-width="60" opacity="0.05"/>
+      <path d="M120 1640 C 320 1480, 560 1800, 800 1620 S 1040 1500, 1120 1700" stroke-width="6" stroke-dasharray="28 24" opacity="0.12"/>
+    </g>
+  </g>
+</svg>
