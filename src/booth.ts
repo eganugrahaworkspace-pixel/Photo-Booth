@@ -468,7 +468,7 @@ async function upload(): Promise<void> {
   setStatus(MSG.done);
   try {
     if (!PUBLIC_ORIGIN) throw new Error("public origin missing");
-    await QRCode.toCanvas(qrCanvas, `${PUBLIC_ORIGIN}/p/${photoId}`, { width: 240, margin: 1 });
+    await QRCode.toCanvas(qrCanvas, `${PUBLIC_ORIGIN}/p/${photoId}`, { width: 200, margin: 1 });
   } catch {
     setStatus("Foto tersimpan, tetapi QR gagal dibuat.", true);
   }

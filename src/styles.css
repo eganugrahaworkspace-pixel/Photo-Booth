@@ -234,9 +234,10 @@ body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .p
   border-radius: 8px;
 }
 
+/* Done: QR sits under the help text in the controls. 200px keeps it scannable from about 50 cm. */
 body[data-state="done"] .qr-box canvas {
-  width: 180px;
-  height: 180px;
+  width: 200px;
+  height: 200px;
 }
 
 /* Done: the help text sits in the controls, where the steps were. Only the help and
@@ -510,9 +511,9 @@ body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"
     width: auto;
   }
 
-  /* Landscape result screen: photo on the left with the QR below it, sized from the viewport height. */
+  /* Landscape result screen: photo alone on the left, sized from the viewport height (the QR is in the controls). */
   body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .result {
-    height: max(280px, calc(100dvh - 340px));
+    height: max(280px, calc(100dvh - 100px));
     width: auto;
   }
 }
