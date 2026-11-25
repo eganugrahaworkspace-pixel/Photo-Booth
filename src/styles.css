@@ -179,9 +179,25 @@ button:disabled {
   max-width: 100%;
 }
 
-/* Done: the QR takes the preview's place so it is on screen with the buttons. */
-body[data-state="done"] .preview {
+/* Result screens (uploading, failed, done): the taken photo takes the live preview's place,
+   with the QR box below it. */
+body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .preview {
   display: none;
+}
+
+body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .preview-wrap {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.result {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #000;
 }
 
 .qr-box canvas {
@@ -191,12 +207,130 @@ body[data-state="done"] .preview {
   border-radius: 8px;
 }
 
-.qr-box p,
+body[data-state="done"] .qr-box canvas {
+  width: 180px;
+  height: 180px;
+}
+
+/* Done: the help text sits in the controls, where the steps were. Only the help and
+   "Foto berikutnya" remain: the selectors and the disabled "Ambil Foto" are hidden. */
+body[data-state="done"] .steps,
+body[data-state="done"] .selectors,
+body[data-state="done"] #shoot {
+  display: none;
+}
+
+.done-help {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.done-help .qr-box__title,
+.done-help .qr-box__next {
+  text-align: left;
+}
+
+.qr-box__caption,
+.qr-box__title,
+.qr-box__next,
 .notice {
   margin: 0;
   font-size: 0.9rem;
   color: var(--muted);
   text-align: center;
+}
+
+.qr-box__title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.qr-box__steps {
+  margin: 0;
+  padding: 0 0 0 1.4em;
+  align-self: stretch;
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--fg);
+}
+
+.qr-box__next {
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.qr-box__steps strong,
+.qr-box__next strong {
+  color: var(--fg);
+}
+
+/* How-to steps beside the booth controls. Only the current step is at full strength:
+   idle shows 1-2, countdown/uploading/failed show 2; done hides the steps (done help replaces them). */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.steps__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.steps__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Badge is absolutely placed, not a flex item, so the text and <strong> stay inline and wrap normally. */
+.steps__item {
+  position: relative;
+  min-height: 32px;
+  padding-left: 42px;
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--fg);
+  opacity: 0.55;
+}
+
+.steps__item::before {
+  content: attr(data-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+body[data-state="idle"] .steps__item:is([data-step="1"], [data-step="2"]),
+body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"]) .steps__item[data-step="2"] {
+  opacity: 1;
+}
+
+body[data-state="idle"] .steps__item:is([data-step="1"], [data-step="2"])::before,
+body:is([data-state="countdown"], [data-state="uploading"], [data-state="failed"]) .steps__item[data-step="2"]::before {
+  background: #155b55;
+  border-color: #155b55;
+  color: #fff;
 }
 
 /* Phone portrait: the booth fills the screen. The preview takes whatever
@@ -206,6 +340,15 @@ body[data-state="done"] .preview {
   .booth {
     height: 100vh;
     height: 100dvh;
+  }
+
+  /* Result screens: the photo takes the height the controls leave, so the QR and buttons stay on screen. */
+  body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .result {
+    flex: 1 1 0;
+    min-height: 0;
+    width: auto;
+    height: auto;
+    max-width: 100%;
   }
 
   .preview-wrap {
@@ -256,6 +399,12 @@ body[data-state="done"] .preview {
   }
 
   .preview-wrap {
+    width: auto;
+  }
+
+  /* Landscape result screen: photo on the left with the QR below it, sized from the viewport height. */
+  body:is([data-state="uploading"], [data-state="failed"], [data-state="done"]) .result {
+    height: max(280px, calc(100dvh - 340px));
     width: auto;
   }
 }

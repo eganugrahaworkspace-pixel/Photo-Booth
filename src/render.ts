@@ -29,7 +29,7 @@ export async function renderPhoto(video: HTMLVideoElement, twibbon: HTMLImageEle
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error("Gagal membuat JPEG"))),
       "image/jpeg",
-      0.9,
+      0.85,
     );
   });
 }

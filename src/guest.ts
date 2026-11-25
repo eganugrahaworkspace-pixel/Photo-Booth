@@ -13,6 +13,7 @@ function el<T extends HTMLElement>(id: string): T {
 const messageEl = el<HTMLParagraphElement>("message");
 const photoEl = el<HTMLImageElement>("photo");
 const saveBtn = el<HTMLButtonElement>("save");
+const howtoEl = el<HTMLDivElement>("howto");
 const retryBtn = el<HTMLButtonElement>("retry");
 const linkEl = el<HTMLAnchorElement>("download");
 
@@ -35,6 +36,7 @@ function showMessage(text: string, isError: boolean): void {
 function showLoading(): void {
   photoEl.hidden = true;
   saveBtn.hidden = true;
+  howtoEl.hidden = true;
   retryBtn.hidden = true;
   showMessage("Memuat foto…", false);
 }
@@ -47,6 +49,7 @@ function showPhoto(blob: Blob): void {
   photoEl.hidden = false;
   messageEl.hidden = true;
   saveBtn.hidden = false;
+  howtoEl.hidden = false;
   retryBtn.hidden = true;
 }
 

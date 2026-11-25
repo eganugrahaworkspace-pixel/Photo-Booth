@@ -14,15 +14,35 @@
           <img id="twibbon" class="twibbon" src="/twibbon/green.png" alt="" />
           <div id="countdown" class="countdown" hidden></div>
         </div>
+        <img id="result" class="result" alt="Foto yang baru diambil" hidden />
         <div id="qr-box" class="qr-box" hidden>
           <canvas id="qr" width="240" height="240"></canvas>
-          <p>Pindai QR untuk membuka foto.</p>
+          <p class="qr-box__caption">Pindai untuk simpan foto</p>
         </div>
       </div>
 
       <section class="controls" aria-label="Kontrol booth">
         <h1>Dari Photobooth</h1>
         <p id="status" class="status" role="status" aria-live="polite">Menyiapkan kamera…</p>
+
+        <div id="done-help" class="done-help" hidden>
+          <p class="qr-box__title">Fotomu sudah jadi!</p>
+          <ol class="qr-box__steps">
+            <li>Arahkan kamera HP ke QR ini</li>
+            <li>Ketuk tautan yang muncul</li>
+            <li>Tekan <strong>Simpan Foto</strong></li>
+          </ol>
+          <p class="qr-box__next">Sudah selesai? Tekan <strong>Foto berikutnya</strong> untuk pengunjung selanjutnya.</p>
+        </div>
+
+        <div class="steps" aria-label="Cara foto" role="group">
+          <p class="steps__title">Cara foto</p>
+          <ol class="steps__list">
+            <li class="steps__item" data-step="1">Berdiri di dalam bingkai</li>
+            <li class="steps__item" data-step="2">Tekan <strong>Ambil Foto</strong>, lalu siap-siap saat hitungan 3–2–1</li>
+            <li class="steps__item" data-step="3">Pindai QR dengan kamera HP untuk melihat fotomu</li>
+          </ol>
+        </div>
 
         <div class="selectors">
           <label class="field">

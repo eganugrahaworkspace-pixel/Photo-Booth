@@ -28,11 +28,15 @@ const retryBtn = $<HTMLButtonElement>("retry");
 const nextBtn = $<HTMLButtonElement>("next");
 const qrBox = $<HTMLDivElement>("qr-box");
 const qrCanvas = $<HTMLCanvasElement>("qr");
+const resultImg = $<HTMLImageElement>("result");
+const doneHelp = $<HTMLDivElement>("done-help");
 
 const CAMERA_STORAGE = "booth-camera";
 // Earlier builds stored an operator key here; it is no longer used and is removed on load.
 const LEGACY_KEY_STORAGE = "booth-key";
 const DISCARD_WINDOW_MS = 4000;
+// A finished photo is cleared after this so the next visitor never sees the previous guest's photo.
+const DONE_AUTO_RESET_MS = 60_000;
 
 // The QR must point at the public production domain, never at whatever origin the operator opened
 // (preview URLs sit behind a login wall). Dev falls back to the local origin.
@@ -110,11 +114,31 @@ let showReady = false;
 let countdownRun = 0;
 let discardArmed = false;
 let discardTimer: ReturnType<typeof setTimeout> | null = null;
+let doneTimer: ReturnType<typeof setTimeout> | null = null;
 let photoId: string | null = null;
 let photoJpeg: Blob | null = null;
+// Object URL of the taken photo shown on the result screen; revoked in reset().
+let resultUrl: string | null = null;
+
+function cancelDoneTimer(): void {
+  if (doneTimer !== null) clearTimeout(doneTimer);
+  doneTimer = null;
+}
+
+// Only the done state auto-resets. failed never does: the operator must be able to retry.
+function syncDoneTimer(): void {
+  cancelDoneTimer();
+  if (state !== "done") return;
+  doneTimer = setTimeout(() => {
+    doneTimer = null;
+    if (state === "done") reset();
+  }, DONE_AUTO_RESET_MS);
+}
 
 function send(e: FlowEvent): void {
+  const prev = state;
   state = next(state, e);
+  if (state !== prev) syncDoneTimer();
   render();
 }
 
@@ -164,6 +188,8 @@ function render(): void {
   retryBtn.hidden = state !== "failed";
   nextBtn.hidden = state !== "done" && state !== "failed";
   qrBox.hidden = state !== "done";
+  doneHelp.hidden = state !== "done";
+  resultImg.hidden = state === "idle" || state === "countdown";
   document.body.dataset.state = state;
   const line = statusLine();
   statusEl.textContent = line.text;
@@ -299,7 +325,7 @@ async function shoot(): Promise<void> {
     if (run !== countdownRun) return;
     countdownEl.textContent = String(n);
     countdownEl.hidden = false;
-    await sleep(1000);
+    await sleep(700);
   }
   if (run !== countdownRun) return;
   countdownEl.hidden = true;
@@ -326,6 +352,9 @@ async function shoot(): Promise<void> {
   // A new shot gets a new id. Retries reuse the same id and Blob.
   photoId = newPhotoId();
   photoJpeg = jpeg;
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = URL.createObjectURL(jpeg);
+  resultImg.src = resultUrl;
   send("captured");
   await upload();
 }
@@ -372,9 +401,13 @@ function reset(): void {
     return;
   }
   disarmDiscard();
+  cancelDoneTimer();
   send("next");
   photoId = null;
   photoJpeg = null;
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  resultUrl = null;
+  resultImg.removeAttribute("src");
   qrCanvas.getContext("2d")?.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
   setReadyStatus();
 }
